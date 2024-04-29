@@ -38,34 +38,34 @@ static int read_inode(int inode_index, struct wfs_inode *inode) {
     return 0;
 }
 
-static int write_inode(int inode_index, struct wfs_inode *inode) {
-    int fd = open(disk_path, O_RDWR);
-    if (fd == -1) {
-        perror("open");
-        return -1;
-    }
+// static int write_inode(int inode_index, struct wfs_inode *inode) {
+//     int fd = open(disk_path, O_RDWR);
+//     if (fd == -1) {
+//         perror("open");
+//         return -1;
+//     }
 
-    // Calculate the offset of the inode on disk
-    off_t offset = sizeof(off_t) * 4 + (inode_index * sizeof(struct wfs_inode));
+//     // Calculate the offset of the inode on disk
+//     off_t offset = sizeof(off_t) * 4 + (inode_index * sizeof(struct wfs_inode));
 
-    // Move the file cursor to the inode offset
-    if (lseek(fd, offset, SEEK_SET) == -1) {
-        perror("lseek");
-        close(fd);
-        return -1;
-    }
+//     // Move the file cursor to the inode offset
+//     if (lseek(fd, offset, SEEK_SET) == -1) {
+//         perror("lseek");
+//         close(fd);
+//         return -1;
+//     }
 
-    // Write the inode to disk
-    ssize_t bytes_written = write(fd, inode, sizeof(struct wfs_inode));
-    if (bytes_written != sizeof(struct wfs_inode)) {
-        perror("write");
-        close(fd);
-        return -1;
-    }
+//     // Write the inode to disk
+//     ssize_t bytes_written = write(fd, inode, sizeof(struct wfs_inode));
+//     if (bytes_written != sizeof(struct wfs_inode)) {
+//         perror("write");
+//         close(fd);
+//         return -1;
+//     }
 
-    close(fd);
-    return 0;
-}
+//     close(fd);
+//     return 0;
+// }
 
 // Function to get the inode index corresponding to a given path
 static int get_inode_index(const char *path) {
@@ -208,6 +208,7 @@ static struct fuse_operations ops = {
 };
 
 
+
 int main(int argc, char *argv[]) {
     // Check for correct number of arguments
     if (argc < 4) {
@@ -221,24 +222,26 @@ int main(int argc, char *argv[]) {
     // Initialize FUSE arguments
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
 
-    // Add FUSE options
-    for (int i = 2; i < argc - 1; ++i) {
-        fuse_opt_add_arg(&args, argv[i]);
+    // Parse FUSE options
+    if (fuse_opt_parse(&args, NULL, NULL, NULL) == -1) {
+        return EXIT_FAILURE;
     }
 
-    // Mount the FUSE filesystem onto the specified mountpoint
-    if (fuse_mount(mount_point, &args) == NULL) {
+//     // Mount the FUSE filesystem onto the specified mountpoint
+    struct fuse_chan *channel = fuse_mount(mount_point, &args);
+    if (channel == NULL) {
         perror("fuse_mount");
         fuse_opt_free_args(&args);
         return EXIT_FAILURE;
     }
 
-    // Start the FUSE event loop with the provided callback functions
-    int ret = fuse_main(args.argc, args.argv, &ops, NULL);
+//     // Start the FUSE event loop with the provided callback functions
+   int ret = fuse_main(args.argc, args.argv, &ops, NULL);
 
-    // Unmount the filesystem and free memory
-    fuse_unmount(mount_point, &args);
+//     // Unmount the filesystem and free memory
+    fuse_unmount(mount_point, channel);
     fuse_opt_free_args(&args);
 
-    return ret;
+   return ret;
 }
+

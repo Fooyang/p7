@@ -8,6 +8,10 @@
 #include "wfs.h"
 #include <linux/stat.h>
 
+int roundup(int num, int factor) {
+    return num % factor == 0 ? num : num + (factor - (num % factor));
+}
+
 int create_superblock(void *addr, int num_inodes, int num_data_blocks) {
     struct wfs_sb *superblock = (struct wfs_sb *)addr;
     superblock->num_inodes = num_inodes;
@@ -51,11 +55,12 @@ int main(int argc, char *argv[])
             break;
         case 'i':
             num_inodes = atoi(optarg);
+            num_inodes = roundup(num_inodes, 32);
             break;
         case 'b':
             num_data_blocks = atoi(optarg);
             // round the number of blocks up to the nearest multiple of 24
-            num_data_blocks = num_data_blocks + 32 - (num_data_blocks % 32);
+            num_data_blocks = roundup(num_data_blocks, 32);
             break;
         }
     }
@@ -67,7 +72,7 @@ int main(int argc, char *argv[])
     }
 
     // opening the file for the file system
-    int fd = open(filename, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    int fd = open(filename, O_RDWR);
     if (fd == -1)
     {
         perror("Error opening file");
@@ -87,7 +92,7 @@ int main(int argc, char *argv[])
                                  + BLOCK_SIZE * num_data_blocks;
 
     // Round up total size to the nearest multiple of 32
-    total_size_required = (total_size_required + 32) - (total_size_required % 32);
+    total_size_required = roundup(total_size_required, 32);
 
     // not enough space in the file
     if (file_info.st_size < total_size_required) {
