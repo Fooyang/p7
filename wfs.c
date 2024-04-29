@@ -38,34 +38,34 @@ static int read_inode(int inode_index, struct wfs_inode *inode) {
     return 0;
 }
 
-// static int write_inode(int inode_index, struct wfs_inode *inode) {
-//     int fd = open(disk_path, O_RDWR);
-//     if (fd == -1) {
-//         perror("open");
-//         return -1;
-//     }
+static int write_inode(int inode_index, struct wfs_inode *inode) {
+    int fd = open(disk_path, O_RDWR);
+    if (fd == -1) {
+        perror("open");
+        return -1;
+    }
 
-//     // Calculate the offset of the inode on disk
-//     off_t offset = sizeof(off_t) * 4 + (inode_index * sizeof(struct wfs_inode));
+    // Calculate the offset of the inode on disk
+    off_t offset = sizeof(off_t) * 4 + (inode_index * sizeof(struct wfs_inode));
 
-//     // Move the file cursor to the inode offset
-//     if (lseek(fd, offset, SEEK_SET) == -1) {
-//         perror("lseek");
-//         close(fd);
-//         return -1;
-//     }
+    // Move the file cursor to the inode offset
+    if (lseek(fd, offset, SEEK_SET) == -1) {
+        perror("lseek");
+        close(fd);
+        return -1;
+    }
 
-//     // Write the inode to disk
-//     ssize_t bytes_written = write(fd, inode, sizeof(struct wfs_inode));
-//     if (bytes_written != sizeof(struct wfs_inode)) {
-//         perror("write");
-//         close(fd);
-//         return -1;
-//     }
+    // Write the inode to disk
+    ssize_t bytes_written = write(fd, inode, sizeof(struct wfs_inode));
+    if (bytes_written != sizeof(struct wfs_inode)) {
+        perror("write");
+        close(fd);
+        return -1;
+    }
 
-//     close(fd);
-//     return 0;
-// }
+    close(fd);
+    return 0;
+}
 
 // Function to get the inode index corresponding to a given path
 static int get_inode_index(const char *path) {
