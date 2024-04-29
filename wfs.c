@@ -10,26 +10,53 @@ char *disk_path;
 char *mount_point;
 
 static int read_inode(int inode_index, struct wfs_inode *inode) {
+    struct wfs_sb superblock;
+
     int fd = open(disk_path, O_RDONLY);
     if (fd == -1) {
         perror("open");
-        return -1;
+        exit(EXIT_FAILURE);
     }
 
-    // Calculate the offset of the inode on disk
-    off_t offset = sizeof(off_t) * 4 + (inode_index * sizeof(struct wfs_inode));
+    // Read the superblock from the disk file
+    if (pread(fd, &superblock, sizeof(struct wfs_sb), 0) == -1) {
+        perror("pread");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
 
-    // Move the file cursor to the inode offset
-    if (lseek(fd, offset, SEEK_SET) == -1) {
-        perror("lseek");
+    // Calculate the offset of the inode bitmap
+    off_t inode_bitmap_offset = superblock.i_bitmap_ptr + ((inode_index / 8) * sizeof(char));
+
+    // Read the inode bitmap
+    char inode_bitmap;
+    if (pread(fd, &inode_bitmap, sizeof(char), inode_bitmap_offset) == -1) {
+        perror("pread");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Check if the inode index is valid
+    if (inode_index >= superblock.num_inodes) {
+        fprintf(stderr, "Invalid inode index\n");
+        close(fd);
+        exit(EXIT_FAILURE);
+    }
+
+    // Check if the inode is allocated in the bitmap
+    if (!(inode_bitmap & (1 << (inode_index % 8)))) {
+        // Inode not allocated
         close(fd);
         return -1;
     }
 
-    // Read the inode from disk
-    ssize_t bytes_read = read(fd, inode, sizeof(struct wfs_inode));
-    if (bytes_read != sizeof(struct wfs_inode)) {
-        perror("read");
+    // Calculate the offset of the inode on disk
+    off_t superblock_size = sizeof(struct wfs_sb);
+    off_t inode_offset = superblock.i_blocks_ptr + (inode_index * sizeof(struct wfs_inode));
+
+    // Read the inode from the disk image
+    if (pread(fd, inode, sizeof(struct wfs_inode), inode_offset) == -1) {
+        perror("pread");
         close(fd);
         return -1;
     }
@@ -45,11 +72,20 @@ static int write_inode(int inode_index, struct wfs_inode *inode) {
         return -1;
     }
 
+    // Read the superblock from the disk image
+    struct wfs_sb superblock;
+    if (pread(fd, &superblock, sizeof(struct wfs_sb), 0) == -1) {
+        perror("pread");
+        close(fd);
+        return -1;
+    }
+
     // Calculate the offset of the inode on disk
-    off_t offset = sizeof(off_t) * 4 + (inode_index * sizeof(struct wfs_inode));
+    off_t superblock_size = sizeof(struct wfs_sb);
+    off_t inode_offset = superblock.i_blocks_ptr + (inode_index * sizeof(struct wfs_inode));
 
     // Move the file cursor to the inode offset
-    if (lseek(fd, offset, SEEK_SET) == -1) {
+    if (lseek(fd, inode_offset, SEEK_SET) == -1) {
         perror("lseek");
         close(fd);
         return -1;
@@ -67,59 +103,69 @@ static int write_inode(int inode_index, struct wfs_inode *inode) {
     return 0;
 }
 
-// Function to get the inode index corresponding to a given path
 static int get_inode_index(const char *path) {
-    // Open the disk image in read mode
     int fd = open(disk_path, O_RDONLY);
     if (fd == -1) {
         perror("open");
         return -1;
     }
 
-    // Read the superblock to get the root inode index
-    off_t superblock_offset = 0;
-
-    // Read the superblock from disk
     struct wfs_sb superblock;
-    if (pread(fd, &superblock, sizeof(struct wfs_sb), superblock_offset) != sizeof(struct wfs_sb)) {
+    if (pread(fd, &superblock, sizeof(struct wfs_sb), 0) == -1) {
         perror("pread");
         close(fd);
         return -1;
     }
 
-    // Get the root directory inode
-    struct wfs_inode root_inode;
-    if (read_inode(superblock.num_inodes - 1, &root_inode) == -1) {
+    // Read the inode bitmap
+    char inode_bitmap[superblock.num_inodes / 8]; // 1 bit per inode
+    if (pread(fd, &inode_bitmap, sizeof(inode_bitmap), superblock.i_bitmap_ptr * BLOCK_SIZE) == -1) {
+        perror("pread");
         close(fd);
         return -1;
     }
 
-    // Close the disk image
-    close(fd);
+    // Traverse the inode blocks
+    for (off_t i = 0; i < superblock.num_inodes; i++) {
+        // Check if the inode is allocated
+        if (!(inode_bitmap[i / 8] & (1 << (i % 8)))) {
+            continue; // Inode not allocated, skip
+        }
 
-    // If the path is the root directory
-    if (strcmp(path, "/") == 0)
-        return superblock.num_inodes - 1;
-
-    // For simplicity, we assume that the root directory contains direct entries only
-    // Traverse the root directory entries to find the matching inode index
-    // You would need to implement a more elaborate traversal for a real filesystem
-    for (int i = 0; i < D_BLOCK; i++) {
-        // Read the block from disk
-        struct wfs_dentry directory_entry;
-        if (pread(fd, &directory_entry, sizeof(struct wfs_dentry), root_inode.blocks[i]) != sizeof(struct wfs_dentry)) {
+        // Read the inode
+        struct wfs_inode inode;
+        off_t inode_offset = superblock.i_blocks_ptr * BLOCK_SIZE + i * sizeof(struct wfs_inode);
+        if (pread(fd, &inode, sizeof(struct wfs_inode), inode_offset) == -1) {
             perror("pread");
             close(fd);
             return -1;
         }
 
-        // Check if the entry matches the path
-        if (strcmp(directory_entry.name, path + 1) == 0) { // Skip the leading '/'
-            return directory_entry.num;
+        // Check if the inode is a directory
+        if ((inode.mode & S_IFMT) != S_IFDIR) {
+            continue; // Not a directory, skip
+        }
+
+        // Traverse the directory entries
+        for (int j = 0; j < D_BLOCK; j++) {
+            struct wfs_dentry entry;
+            off_t entry_offset = inode.blocks[j] * BLOCK_SIZE + sizeof(struct wfs_dentry);
+            if (pread(fd, &entry, sizeof(struct wfs_dentry), entry_offset) == -1) {
+                perror("pread");
+                close(fd);
+                return -1;
+            }
+
+            // Check if the entry matches the path
+            if (strcmp(entry.name, path + 1) == 0) { // Skip the leading '/'
+                close(fd);
+                return entry.num; // Return the inode number
+            }
         }
     }
 
-    // If the path doesn't exist
+    // Path not found
+    close(fd);
     return -1;
 }
 
