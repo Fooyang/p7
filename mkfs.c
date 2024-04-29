@@ -5,7 +5,7 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <unistd.h>
-#include <wfs.h>
+#include "wfs.h"
 #include <linux/stat.h>
 
 int create_superblock(void *addr, int num_inodes, int num_data_blocks) {

@@ -349,7 +349,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Mount the FUSE filesystem onto the specified mountpoint
-    if (fuse_mount(mount_point, &args) == -1) {
+    if (fuse_mount(mount_point, &args) == NULL) {
         perror("fuse_mount");
         fuse_opt_free_args(&args);
         return EXIT_FAILURE;
