@@ -18,81 +18,37 @@ struct wfs_sb *sb;
 struct wfs_inode *root_inode;
 
 static int read_inode(int inode_index, struct wfs_inode *inode) {
-    // Open the disk image in read mode
-    int fd = open(disk_path, O_RDONLY);
-    if (fd == -1) {
-        perror("open");
-        return -1;
-    }
-
-    // Read the superblock from the disk file
-    struct wfs_sb superblock;
-    if (pread(fd, &superblock, sizeof(struct wfs_sb), 0) == -1) {
-        perror("pread");
-        close(fd);
-        return -1;
-    }
-
     // Calculate the offset of the inode bitmap
-    off_t inode_bitmap_offset = superblock.i_bitmap_ptr + ((inode_index / 8) * sizeof(char));
+    off_t inode_bitmap_offset = sb->i_bitmap_ptr + ((inode_index / 8) * sizeof(char));
 
     // Read the inode bitmap
-    char inode_bitmap;
-    if (pread(fd, &inode_bitmap, sizeof(char), inode_bitmap_offset) == -1) {
-        perror("pread");
-        close(fd);
-        return -1;
-    }
+    char inode_bitmap = mem[inode_bitmap_offset];
 
     // Check if the inode index is valid
-    if (inode_index >= superblock.num_inodes) {
+    if (inode_index >= sb->num_inodes) {
         fprintf(stderr, "Invalid inode index\n");
-        close(fd);
         return -1;
     }
 
     // Check if the inode is allocated in the bitmap
     if (!(inode_bitmap & (1 << (inode_index % 8)))) {
         // Inode not allocated
-        close(fd);
         return -1;
     }
 
     // Calculate the offset of the inode on disk
-    off_t inode_offset = superblock.i_blocks_ptr + (inode_index * sizeof(struct wfs_inode));
+    off_t inode_offset = sb->i_blocks_ptr + (inode_index * sizeof(struct wfs_inode));
 
     // Read the inode from the disk image
-    if (pread(fd, inode, sizeof(struct wfs_inode), inode_offset) == -1) {
-        perror("pread");
-        close(fd);
-        return -1;
-    }
+    memcpy(inode, mem + inode_offset, sizeof(struct wfs_inode));
 
-    close(fd);
     return 0;
 }
 
 static int get_inode_index(const char *path) {
-    struct wfs_sb superblock;
     char *mutable_path = strdup(path); // Make a mutable copy of the path
     if (mutable_path == NULL) {
         perror("strdup");
-        return -1;
-    }
-
-    // Open the disk image in read mode
-    int fd = open(disk_path, O_RDONLY);
-    if (fd == -1) {
-        perror("open");
-        free(mutable_path); // Free the allocated memory
-        return -1;
-    }
-
-    // Read the superblock to get the root inode index
-    if (pread(fd, &superblock, sizeof(struct wfs_sb), 0) != sizeof(struct wfs_sb)) {
-        perror("pread");
-        close(fd);
-        free(mutable_path); // Free the allocated memory
         return -1;
     }
 
@@ -104,22 +60,13 @@ static int get_inode_index(const char *path) {
     while (token != NULL) {
         // Read the inode corresponding to the current index
         struct wfs_inode inode;
-        if (read_inode(inode_index, &inode) == -1) {
-            close(fd);
-            free(mutable_path); // Free the allocated memory
-            return -1;
-        }
+        memcpy(&inode, mem + sb->i_blocks_ptr + inode_index * sizeof(struct wfs_inode), sizeof(struct wfs_inode));
 
         // Search for the token in the directory entries
         int found = 0;
         for (int i = 0; i < D_BLOCK; i++) {
             struct wfs_dentry directory_entry;
-            if (pread(fd, &directory_entry, sizeof(struct wfs_dentry), inode.blocks[i]) != sizeof(struct wfs_dentry)) {
-                perror("pread");
-                close(fd);
-                free(mutable_path); // Free the allocated memory
-                return -1;
-            }
+            memcpy(&directory_entry, mem + sb->d_blocks_ptr + inode.blocks[i] * sizeof(struct wfs_dentry), sizeof(struct wfs_dentry));
 
             // Compare the directory entry name with the token
             if (strcmp(directory_entry.name, token) == 0) {
@@ -132,7 +79,6 @@ static int get_inode_index(const char *path) {
         // If the directory entry was not found
         if (!found) {
             fprintf(stderr, "Directory not found: %s\n", token);
-            close(fd);
             free(mutable_path); // Free the allocated memory
             return -1;
         }
@@ -141,7 +87,6 @@ static int get_inode_index(const char *path) {
         token = strtok(NULL, "/");
     }
 
-    close(fd);
     free(mutable_path); // Free the allocated memory
     return inode_index;
 }
@@ -164,24 +109,14 @@ static int wfs_getattr(const char *path, struct stat *stbuf) {
         return -EIO;
     }
 
-    // Set common attributes for both files and directories
     stbuf->st_uid = inode.uid; // Owner user ID
     stbuf->st_gid = inode.gid; // Owner group ID
     stbuf->st_atime = inode.atim; // Last access time
     stbuf->st_mtime = inode.mtim; // Last modification time
-
-    // Check if the inode represents a directory
-    if (S_ISDIR(inode.mode)) {
-        // Set attributes for the directory
-        stbuf->st_mode = S_IFDIR | inode.mode; // Directory with permissions
-        stbuf->st_nlink = 2; // Number of hard links (for simplicity, we assume it's always 2)
-        return 0;
-    }
-
-    // Set attributes for a regular file
-    stbuf->st_mode = S_IFREG | inode.mode; // Regular file with permissions
-    stbuf->st_nlink = 1; // Number of hard links (for simplicity, we assume it's always 1)
+    stbuf->st_mode = inode.mode; // Regular file with permissions
+    stbuf->st_nlink = inode.nlinks; // Number of hard links
     stbuf->st_size = inode.size; // File size in bytes
+
     return 0;
 }
 
@@ -189,12 +124,11 @@ static int wfs_getattr(const char *path, struct stat *stbuf) {
 static int make(const char* path, mode_t mode) {
     // make a new inode of the mode specified 
     
-
 }
 
 static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 {
-
+    
     return 0; // Success
 }
 
@@ -367,29 +301,17 @@ static int wfs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_
         return -ENOTDIR; // Not a directory
     }
 
-    // Open the directory corresponding to the inode
-    DIR* dir = opendir(path);
-    if (dir == NULL) {
-        perror("opendir");
-        exit(EXIT_FAILURE);
-    }
+    // Get the directory entries and the count of dentries
+    struct wfs_dentry *dentries = (struct wfs_dentry *)((uintptr_t)disk_path + (uintptr_t)sb->d_blocks_ptr + inode.blocks[0] * sizeof(struct wfs_dentry));
+    int dentry_count = inode.size / sizeof(struct wfs_dentry);
 
-    // Read directory entries and fill the buffer
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL) {
-        // Skip "." and ".." entries
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-
-        // Add the directory entry to the buffer
-        if (filler(buf, entry->d_name, NULL, 0) != 0) {
+    // Fill the buffer with directory entries
+    for (int i = 0; i < dentry_count; i++) {
+        // Add the dentry to the filler buffer
+        if (filler(buf, dentries[i].name, NULL, 0) != 0) {
             return -ENOMEM; // Buffer full
         }
     }
-
-    // Close the directory
-    closedir(dir);
 
     return 0; // Success
 }
