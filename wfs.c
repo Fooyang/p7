@@ -13,7 +13,8 @@ char *mount_point;
 static int read_inode(int inode_index, struct wfs_inode *inode) {
     // Open the disk image in read mode
     int fd = open(disk_path, O_RDONLY);
-    if (fd == -1) {
+    if (fd == -1)
+    {
         perror("open");
         return -1;
     }
@@ -61,16 +62,17 @@ static int read_inode(int inode_index, struct wfs_inode *inode) {
         return -1;
     }
 
-    close(fd);
-    return 0;
-}
+//     close(fd);
+//     return 0;
+// }
 
 static int get_inode_index(const char *path) {
     struct wfs_sb superblock;
 
     // Open the disk image in read mode
     int fd = open(disk_path, O_RDONLY);
-    if (fd == -1) {
+    if (fd == -1)
+    {
         perror("open");
         return -1;
     }
@@ -129,60 +131,64 @@ static int get_inode_index(const char *path) {
 }
 
 // Function to get attributes of a file or directory
-static int wfs_getattr(const char *path, struct stat *stbuf) {
+static int wfs_getattr(const char *path, struct stat *stbuf)
+{
     // Initialize the struct stat with 0s
     memset(stbuf, 0, sizeof(struct stat));
 
     // Get the inode index corresponding to the path
     int inode_index = get_inode_index(path);
-    if (inode_index == -1) {
+    if (inode_index == -1)
+    {
         // Path doesn't exist
         return -ENOENT;
     }
 
     // Read the inode from disk
     struct wfs_inode inode;
-    if (read_inode(inode_index, &inode) == -1) {
+    if (read_inode(inode_index, &inode) == -1)
+    {
         return -EIO;
     }
 
     // Set common attributes for both files and directories
-    stbuf->st_uid = inode.uid; // Owner user ID
-    stbuf->st_gid = inode.gid; // Owner group ID
+    stbuf->st_uid = inode.uid;    // Owner user ID
+    stbuf->st_gid = inode.gid;    // Owner group ID
     stbuf->st_atime = inode.atim; // Last access time
     stbuf->st_mtime = inode.mtim; // Last modification time
 
     // Check if the inode represents a directory
-    if (S_ISDIR(inode.mode)) {
+    if (S_ISDIR(inode.mode))
+    {
         // Set attributes for the directory
         stbuf->st_mode = S_IFDIR | inode.mode; // Directory with permissions
-        stbuf->st_nlink = 2; // Number of hard links (for simplicity, we assume it's always 2)
+        stbuf->st_nlink = 2;                   // Number of hard links (for simplicity, we assume it's always 2)
         return 0;
     }
 
     // Set attributes for a regular file
     stbuf->st_mode = S_IFREG | inode.mode; // Regular file with permissions
-    stbuf->st_nlink = 1; // Number of hard links (for simplicity, we assume it's always 1)
-    stbuf->st_size = inode.size; // File size in bytes
+    stbuf->st_nlink = 1;                   // Number of hard links (for simplicity, we assume it's always 1)
+    stbuf->st_size = inode.size;           // File size in bytes
     return 0;
 }
 
-static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
+static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
     return 0; // Success
 }
 
-static int wfs_mkdir(const char* path, mode_t mode)
+static int wfs_mkdir(const char *path, mode_t mode)
 {
     return 0; // Return 0 on success
 }
 
-static int wfs_unlink(const char* path)
+static int wfs_unlink(const char *path)
 {
     return 0; // Return 0 on success
 }
 
-static int wfs_rmdir(const char* path)
+static int wfs_rmdir(const char *path)
 {
     return 0; // Return 0 on success
 }
@@ -377,15 +383,41 @@ static struct fuse_operations ops = {
     .readdir = wfs_readdir,
 };
 
+int main(int argc, char *argv[])
+{
+
 int main(int argc, char *argv[]) {
     // Check for correct number of arguments
-    if (argc < 4) {
+    if (argc < 4)
+    {
         fprintf(stderr, "Usage: %s disk_path [FUSE options] mount_point\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    disk_path = argv[1]; // Get the disk path from command-line arguments
+    disk_path = argv[1];          // Get the disk path from command-line arguments
     mount_point = argv[argc - 1]; // Get the mountpoint from command-line arguments
+    char *new_args[argc-1];
+    int new_count = 0;
+    for (int i = 0; i < argc; i++)
+    {
+        if (i == 1) {
+            continue;
+        }
+        new_args[new_count] = argv[i];
+        new_count++;
+    }
+    new_args[new_count] = NULL;
+
+       for (int i = 0; i <= new_count; i++)
+    {
+        printf("printing arguments before opt parse : %s\n", argv[i]);
+    }
+
+     printf("printing argument mount point : %s\n", mount_point);
+
+    //     // Mount the FUSE filesystem onto the specified mountpoint
+   
+    printf("going to call fuse main\n");
 
     // Initialize FUSE arguments
     struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
@@ -402,6 +434,8 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    //     // Start the FUSE event loop with the provided callback functions
+    int ret = fuse_main(argc-1, new_args, &ops, NULL);
     // Start the FUSE event loop with the provided callback functions
     int ret = fuse_main(args.argc, args.argv, &ops, NULL);
 
@@ -409,5 +443,6 @@ int main(int argc, char *argv[]) {
     fuse_unmount(mount_point, &args);
     fuse_opt_free_args(&args);
 
+    return ret;
     return ret;
 }
