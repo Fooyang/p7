@@ -13,8 +13,7 @@ char *mount_point;
 static int read_inode(int inode_index, struct wfs_inode *inode) {
     // Open the disk image in read mode
     int fd = open(disk_path, O_RDONLY);
-    if (fd == -1)
-    {
+    if (fd == -1) {
         perror("open");
         return -1;
     }
@@ -62,18 +61,23 @@ static int read_inode(int inode_index, struct wfs_inode *inode) {
         return -1;
     }
 
-//     close(fd);
-//     return 0;
-// }
+    close(fd);
+    return 0;
+}
 
 static int get_inode_index(const char *path) {
     struct wfs_sb superblock;
+    char *mutable_path = strdup(path); // Make a mutable copy of the path
+    if (mutable_path == NULL) {
+        perror("strdup");
+        return -1;
+    }
 
     // Open the disk image in read mode
     int fd = open(disk_path, O_RDONLY);
-    if (fd == -1)
-    {
+    if (fd == -1) {
         perror("open");
+        free(mutable_path); // Free the allocated memory
         return -1;
     }
 
@@ -81,6 +85,7 @@ static int get_inode_index(const char *path) {
     if (pread(fd, &superblock, sizeof(struct wfs_sb), 0) != sizeof(struct wfs_sb)) {
         perror("pread");
         close(fd);
+        free(mutable_path); // Free the allocated memory
         return -1;
     }
 
@@ -88,12 +93,13 @@ static int get_inode_index(const char *path) {
     int inode_index = 0;
 
     // Parse the path and traverse through the directories
-    char *token = strtok(path, "/");
+    char *token = strtok(mutable_path, "/");
     while (token != NULL) {
         // Read the inode corresponding to the current index
         struct wfs_inode inode;
         if (read_inode(inode_index, &inode) == -1) {
             close(fd);
+            free(mutable_path); // Free the allocated memory
             return -1;
         }
 
@@ -104,6 +110,7 @@ static int get_inode_index(const char *path) {
             if (pread(fd, &directory_entry, sizeof(struct wfs_dentry), inode.blocks[i]) != sizeof(struct wfs_dentry)) {
                 perror("pread");
                 close(fd);
+                free(mutable_path); // Free the allocated memory
                 return -1;
             }
 
@@ -119,6 +126,7 @@ static int get_inode_index(const char *path) {
         if (!found) {
             fprintf(stderr, "Directory not found: %s\n", token);
             close(fd);
+            free(mutable_path); // Free the allocated memory
             return -1;
         }
 
@@ -127,68 +135,65 @@ static int get_inode_index(const char *path) {
     }
 
     close(fd);
+    free(mutable_path); // Free the allocated memory
     return inode_index;
 }
 
 // Function to get attributes of a file or directory
-static int wfs_getattr(const char *path, struct stat *stbuf)
-{
+static int wfs_getattr(const char *path, struct stat *stbuf) {
     // Initialize the struct stat with 0s
     memset(stbuf, 0, sizeof(struct stat));
 
     // Get the inode index corresponding to the path
     int inode_index = get_inode_index(path);
-    if (inode_index == -1)
-    {
+    if (inode_index == -1) {
         // Path doesn't exist
         return -ENOENT;
     }
 
     // Read the inode from disk
     struct wfs_inode inode;
-    if (read_inode(inode_index, &inode) == -1)
-    {
+    if (read_inode(inode_index, &inode) == -1) {
         return -EIO;
     }
 
     // Set common attributes for both files and directories
-    stbuf->st_uid = inode.uid;    // Owner user ID
-    stbuf->st_gid = inode.gid;    // Owner group ID
+    stbuf->st_uid = inode.uid; // Owner user ID
+    stbuf->st_gid = inode.gid; // Owner group ID
     stbuf->st_atime = inode.atim; // Last access time
     stbuf->st_mtime = inode.mtim; // Last modification time
 
     // Check if the inode represents a directory
-    if (S_ISDIR(inode.mode))
-    {
+    if (S_ISDIR(inode.mode)) {
         // Set attributes for the directory
         stbuf->st_mode = S_IFDIR | inode.mode; // Directory with permissions
-        stbuf->st_nlink = 2;                   // Number of hard links (for simplicity, we assume it's always 2)
+        stbuf->st_nlink = 2; // Number of hard links (for simplicity, we assume it's always 2)
         return 0;
     }
 
     // Set attributes for a regular file
     stbuf->st_mode = S_IFREG | inode.mode; // Regular file with permissions
-    stbuf->st_nlink = 1;                   // Number of hard links (for simplicity, we assume it's always 1)
-    stbuf->st_size = inode.size;           // File size in bytes
+    stbuf->st_nlink = 1; // Number of hard links (for simplicity, we assume it's always 1)
+    stbuf->st_size = inode.size; // File size in bytes
     return 0;
 }
 
-static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
+static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 {
     return 0; // Success
 }
 
-static int wfs_mkdir(const char *path, mode_t mode)
+static int wfs_mkdir(const char* path, mode_t mode)
 {
     return 0; // Return 0 on success
 }
 
-static int wfs_unlink(const char *path)
+static int wfs_unlink(const char* path)
 {
     return 0; // Return 0 on success
 }
 
-static int wfs_rmdir(const char *path)
+static int wfs_rmdir(const char* path)
 {
     return 0; // Return 0 on success
 }
@@ -247,83 +252,84 @@ static int wfs_read(const char* path, char *buf, size_t size, off_t offset, stru
 
 static int wfs_write(const char* path, const char *buf, size_t size, off_t offset, struct fuse_file_info* fi)
 {
-    // Get the inode index for the given file path
-    int inode_index = get_inode_index(path);
-    if (inode_index == -1) {
-        return -ENOENT; // File not found
-    }
+    // // Get the inode index for the given file path
+    // int inode_index = get_inode_index(path);
+    // if (inode_index == -1) {
+    //     return -ENOENT; // File not found
+    // }
 
-    // Open the disk image in read mode
-    int fd = open(disk_path, O_RDONLY);
-    if (fd == -1) {
-        perror("open");
-        return -EIO;
-    }
+    // // Open the disk image in read mode
+    // int fd = open(disk_path, O_RDONLY);
+    // if (fd == -1) {
+    //     perror("open");
+    //     return -EIO;
+    // }
 
-    // Read the inode information
-    struct wfs_inode inode;
-    if (read_inode(inode_index, &inode) == -1) {
-        return -EIO; // I/O error
-    }
+    // // Read the inode information
+    // struct wfs_inode inode;
+    // if (read_inode(inode_index, &inode) == -1) {
+    //     return -EIO; // I/O error
+    // }
 
-    // Check if the inode represents a regular file
-    if (!(inode.mode & S_IFREG)) {
-        return -EISDIR; // Not a regular file
-    }
+    // // Check if the inode represents a regular file
+    // if (!(inode.mode & S_IFREG)) {
+    //     return -EISDIR; // Not a regular file
+    // }
 
-    // Determine the block index and offset within the file
-    off_t block_index = offset / BLOCK_SIZE;
-    off_t block_offset = offset % BLOCK_SIZE;
+    // // Determine the block index and offset within the file
+    // off_t block_index = offset / BLOCK_SIZE;
+    // off_t block_offset = offset % BLOCK_SIZE;
 
-    // Iterate over the blocks to write the data
-    size_t bytes_written = 0;
-    while (bytes_written < size) {
-        // Calculate the block size to write
-        size_t remaining_size = size - bytes_written;
-        size_t block_size = remaining_size < BLOCK_SIZE - block_offset ? remaining_size : BLOCK_SIZE - block_offset;
+    // // Iterate over the blocks to write the data
+    // size_t bytes_written = 0;
+    // while (bytes_written < size) {
+    //     // Calculate the block size to write
+    //     size_t remaining_size = size - bytes_written;
+    //     size_t block_size = remaining_size < BLOCK_SIZE - block_offset ? remaining_size : BLOCK_SIZE - block_offset;
 
-        // Allocate a new block if needed
-        if (inode.blocks[block_index] == 0) {
-            // Find a free block
-            off_t free_block_index = find_free_block();
-            if (free_block_index == -1) {
-                return -ENOSPC; // No space left on device
-            }
-            // Mark the block as used in the data bitmap
-            if (mark_block_used(free_block_index) == -1) {
-                return -EIO; // I/O error
-            }
-            // Update the inode with the new block
-            inode.blocks[block_index] = free_block_index;
-        }
+    //     // Allocate a new block if needed
+    //     if (inode.blocks[block_index] == 0) {
+    //         // Find a free block
+    //         off_t free_block_index = find_free_block();
+    //         if (free_block_index == -1) {
+    //             return -ENOSPC; // No space left on device
+    //         }
+    //         // Mark the block as used in the data bitmap
+    //         if (mark_block_used(free_block_index) == -1) {
+    //             return -EIO; // I/O error
+    //         }
+    //         // Update the inode with the new block
+    //         inode.blocks[block_index] = free_block_index;
+    //     }
 
-        // Write data to the block
-        off_t block_offset_in_disk = inode.blocks[block_index] * BLOCK_SIZE + block_offset;
-        ssize_t bytes_written_to_block = pwrite(fd, buf + bytes_written, block_size, block_offset_in_disk);
-        if (bytes_written_to_block == -1) {
-            perror("pwrite");
-            return -EIO; // I/O error
-        }
+    //     // Write data to the block
+    //     off_t block_offset_in_disk = inode.blocks[block_index] * BLOCK_SIZE + block_offset;
+    //     ssize_t bytes_written_to_block = pwrite(fd, buf + bytes_written, block_size, block_offset_in_disk);
+    //     if (bytes_written_to_block == -1) {
+    //         perror("pwrite");
+    //         return -EIO; // I/O error
+    //     }
 
-        // Update the number of bytes written
-        bytes_written += bytes_written_to_block;
+    //     // Update the number of bytes written
+    //     bytes_written += bytes_written_to_block;
 
-        // Move to the next block
-        block_index++;
-        block_offset = 0; // Reset the block offset for subsequent blocks
-    }
+    //     // Move to the next block
+    //     block_index++;
+    //     block_offset = 0; // Reset the block offset for subsequent blocks
+    // }
 
-    // Update the inode size if necessary
-    if (offset + size > inode.size) {
-        inode.size = offset + size;
-    }
+    // // Update the inode size if necessary
+    // if (offset + size > inode.size) {
+    //     inode.size = offset + size;
+    // }
 
-    // Write the updated inode to disk
-    if (write_inode(inode_index, &inode) == -1) {
-        return -EIO; // I/O error
-    }
+    // // Write the updated inode to disk
+    // if (write_inode(inode_index, &inode) == -1) {
+    //     return -EIO; // I/O error
+    // }
 
-    return size; // Return the number of bytes written on success
+    // return size; // Return the number of bytes written on success
+    return 1;
 }
 
 static int wfs_readdir(const char* path, void* buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info* fi)
@@ -385,8 +391,6 @@ static struct fuse_operations ops = {
 
 int main(int argc, char *argv[])
 {
-
-int main(int argc, char *argv[]) {
     // Check for correct number of arguments
     if (argc < 4)
     {
@@ -419,30 +423,8 @@ int main(int argc, char *argv[]) {
    
     printf("going to call fuse main\n");
 
-    // Initialize FUSE arguments
-    struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
-
-    // Add FUSE options
-    for (int i = 2; i < argc - 1; ++i) {
-        fuse_opt_add_arg(&args, argv[i]);
-    }
-
-    // Mount the FUSE filesystem onto the specified mountpoint
-    if (fuse_mount(mount_point, &args) == NULL) {
-        perror("fuse_mount");
-        fuse_opt_free_args(&args);
-        return EXIT_FAILURE;
-    }
-
     //     // Start the FUSE event loop with the provided callback functions
     int ret = fuse_main(argc-1, new_args, &ops, NULL);
-    // Start the FUSE event loop with the provided callback functions
-    int ret = fuse_main(args.argc, args.argv, &ops, NULL);
 
-    // Unmount the filesystem and free memory
-    fuse_unmount(mount_point, &args);
-    fuse_opt_free_args(&args);
-
-    return ret;
     return ret;
 }
