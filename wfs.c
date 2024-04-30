@@ -89,12 +89,12 @@ static int get_inode_index(const char *path) {
     }
 
     // Read the superblock to get the root inode index
-    // if (pread(fd, &superblock, sizeof(struct wfs_sb), 0) != sizeof(struct wfs_sb)) {
-    //     perror("pread");
-    //     close(fd);
-    //     free(mutable_path); // Free the allocated memory
-    //     return -1;
-    // }
+    if (pread(fd, &superblock, sizeof(struct wfs_sb), 0) != sizeof(struct wfs_sb)) {
+        perror("pread");
+        close(fd);
+        free(mutable_path); // Free the allocated memory
+        return -1;
+    }
 
     // Initialize inode index with the root inode index
     int inode_index = 0;
