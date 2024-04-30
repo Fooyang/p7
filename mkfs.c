@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
     }
 
     size_t total_size_required = sizeof(struct wfs_sb) + (num_inodes / 8) +
-                                 (num_data_blocks / 8) + sizeof(struct wfs_inode) * num_inodes +
+                                 (num_data_blocks / 8) + BLOCK_SIZE * num_inodes +
                                  + BLOCK_SIZE * num_data_blocks;
 
     // Round up total size to the nearest multiple of 32
@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
     }
 
     // Memory map the file
-    void *addr = mmap(NULL, total_size_required, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    void *addr = mmap(NULL, total_size_required, PROT_READ, MAP_PRIVATE, fd, 0);
     if (addr == MAP_FAILED) {
         perror("mmap");
         close(fd);

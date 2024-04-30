@@ -6,9 +6,16 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <sys/mman.h>
+
 
 char *disk_path;
 char *mount_point;
+int file_size;
+int fd;
+char *mem;
+struct wfs_sb *sb;
+struct wfs_inode *root_inode;
 
 static int read_inode(int inode_index, struct wfs_inode *inode) {
     // Open the disk image in read mode
@@ -82,12 +89,12 @@ static int get_inode_index(const char *path) {
     }
 
     // Read the superblock to get the root inode index
-    if (pread(fd, &superblock, sizeof(struct wfs_sb), 0) != sizeof(struct wfs_sb)) {
-        perror("pread");
-        close(fd);
-        free(mutable_path); // Free the allocated memory
-        return -1;
-    }
+    // if (pread(fd, &superblock, sizeof(struct wfs_sb), 0) != sizeof(struct wfs_sb)) {
+    //     perror("pread");
+    //     close(fd);
+    //     free(mutable_path); // Free the allocated memory
+    //     return -1;
+    // }
 
     // Initialize inode index with the root inode index
     int inode_index = 0;
@@ -178,13 +185,22 @@ static int wfs_getattr(const char *path, struct stat *stbuf) {
     return 0;
 }
 
+
+static int make(const char* path, mode_t mode) {
+    // make a new inode of the mode specified 
+    
+
+}
+
 static int wfs_mknod(const char* path, mode_t mode, dev_t rdev)
 {
+
     return 0; // Success
 }
 
 static int wfs_mkdir(const char* path, mode_t mode)
 {
+
     return 0; // Return 0 on success
 }
 
@@ -412,16 +428,12 @@ int main(int argc, char *argv[])
     }
     new_args[new_count] = NULL;
 
-       for (int i = 0; i <= new_count; i++)
-    {
-        printf("printing arguments before opt parse : %s\n", argv[i]);
-    }
-
-     printf("printing argument mount point : %s\n", mount_point);
-
-    //     // Mount the FUSE filesystem onto the specified mountpoint
-   
-    printf("going to call fuse main\n");
+    // mmap
+    fd = open(disk_path, O_RDWR);
+    file_size = lseek(fd, 0, SEEK_END);
+    mem = mmap(0, file_size, PROT_READ|PROT_WRITE, MAP_PRIVATE, fd, 0);
+    sb = mem;
+    root_inode = (struct wfs_inode *)((char *)mem + sizeof(struct wfs_sb));
 
     //     // Start the FUSE event loop with the provided callback functions
     int ret = fuse_main(argc-1, new_args, &ops, NULL);
