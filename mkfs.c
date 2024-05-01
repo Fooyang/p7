@@ -36,6 +36,13 @@ int create_root_inode(void *addr, int num_inodes) {
     root_inode->gid = getgid(); // Owner group ID
     root_inode->nlinks = 1; // Number of directory links (initially empty)
 
+    char* data_at_offset = (char *) addr + sizeof(struct wfs_sb); // Initialize this pointer
+
+    // Then, use a bitwise OR operation to set the bit
+    printf("what is at data_at_offset[0]: %d\n", (int) data_at_offset[0]);
+    data_at_offset[0] |= (1 << 0);
+
+    printf("what is at data_at_offset[0]: %d\n", (int) data_at_offset[0]);
 
     return 0;
 }
@@ -96,7 +103,7 @@ int main(int argc, char *argv[])
     }
 
     size_t total_size_required = sizeof(struct wfs_sb) + (num_inodes / 8) +
-                                 (num_data_blocks / 8) + sizeof(struct wfs_inode) * num_inodes +
+                                 (num_data_blocks / 8) + BLOCK_SIZE * num_inodes +
                                  + BLOCK_SIZE * num_data_blocks;
 
     // Round up total size to the nearest multiple of 32
@@ -107,6 +114,8 @@ int main(int argc, char *argv[])
         close(fd);
         return -1;
     }
+
+    
 
 
 
