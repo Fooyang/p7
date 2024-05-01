@@ -314,6 +314,7 @@ static int make(const char *path, mode_t mode)
     // check if path is already present (it shouldn't be)
     if (get_inode_index(path) != 0)
     {
+        printf("returning -1 because it wasn't found\n");
         return -1;
     }
 
