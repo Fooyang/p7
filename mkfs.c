@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include "wfs.h"
 #include <linux/stat.h>
+#include <stdint.h>
 
 int roundup(int num, int factor) {
     return num % factor == 0 ? num : num + (factor - (num % factor));
@@ -21,6 +22,10 @@ int create_superblock(void *addr, int num_inodes, int num_data_blocks) {
     superblock->i_blocks_ptr = superblock->d_bitmap_ptr + (num_data_blocks / 8); // Start of inode blocks
     superblock->d_blocks_ptr = superblock->i_blocks_ptr + (BLOCK_SIZE * num_inodes); // Start of data blocks
 
+//    uint8_t *inode_bitmap_ptr = (uint8_t *)addr + sizeof(struct wfs_sb);
+//     *inode_bitmap_ptr = 8; // Set the first bit to 1
+
+
     return 0;
 }
 
@@ -30,6 +35,7 @@ int create_root_inode(void *addr, int num_inodes) {
     root_inode->uid = getuid(); // Owner user ID
     root_inode->gid = getgid(); // Owner group ID
     root_inode->nlinks = 1; // Number of directory links (initially empty)
+
 
     return 0;
 }
@@ -79,6 +85,8 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+
+
     struct stat file_info;
     if (fstat(fd, &file_info) == -1)
     {
@@ -99,6 +107,8 @@ int main(int argc, char *argv[])
         close(fd);
         return -1;
     }
+
+
 
     // Memory map the file
     void *addr = mmap(NULL, total_size_required, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);

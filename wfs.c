@@ -17,11 +17,13 @@ int fd;
 char *mem;
 struct wfs_sb *sb;
 struct wfs_inode *root_inode;
-int last_inode_num;
+int last_inode_num = 1;
 
 static int read_inode(int inode_index, struct wfs_inode *inode)
 {
     printf("entering read_inode\n");
+    printf("this is what is at superblock %d", (int) (sb->d_bitmap_ptr));
+    printf("this is what is at inode bitmap%d", (int) *((char*)sb + sizeof(struct wfs_sb)));
     // Calculate the offset of the inode bitmap
     off_t inode_bitmap_offset = sb->i_bitmap_ptr + ((inode_index / 8) * sizeof(char));
 
@@ -43,10 +45,10 @@ static int read_inode(int inode_index, struct wfs_inode *inode)
     }
 
     // Calculate the offset of the inode on disk
-    off_t inode_offset = sb->i_blocks_ptr + (inode_index * sizeof(struct wfs_inode));
+    off_t inode_offset = sb->i_blocks_ptr + (inode_index * BLOCK_SIZE);
 
     // Read the inode from the disk image
-    memcpy(inode, mem + inode_offset, sizeof(struct wfs_inode));
+    memcpy(inode, mem + inode_offset, BLOCK_SIZE);
 
     return 0;
 }
@@ -152,6 +154,7 @@ void extract_filename(const char *path, char *filename)
         // If no '/', the path itself is the filename
         strcpy(filename, path);
     }
+    printf("exiting extract filename\n");
 }
 
 static int update(char *path, void *data, int offset)
@@ -167,8 +170,10 @@ static int update(char *path, void *data, int offset)
 
     // Read the inode from disk
     struct wfs_inode inode;
+    printf("inode number we are getting from get inode index in update: %d\n", inode_index);
     if (read_inode(inode_index, &inode) == -1)
     {
+        printf("read inode returned -1\n");
         return -EIO;
     }
 
@@ -207,7 +212,7 @@ static int add(const char *path, mode_t mode)
     // Initialize blocks and set all elements to 0
     memset(blocks, 0, sizeof(blocks));
     char *mutable_path = strdup(path);
-    char *filename = NULL;
+    char filename[128];
     struct wfs_dentry dentry_1;
     struct wfs_dentry dentry_2;
     extract_filename(mutable_path, filename);
@@ -326,7 +331,7 @@ static int make(const char *path, mode_t mode)
     }
 
     char *mutable_path = strdup(path);
-    char *filename = NULL;
+    char filename[128];
     extract_filename(mutable_path, filename);
 
     struct wfs_dentry dentry;
