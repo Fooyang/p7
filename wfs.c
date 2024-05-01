@@ -21,6 +21,7 @@ int last_inode_num;
 
 static int read_inode(int inode_index, struct wfs_inode *inode)
 {
+    printf("entering read_inode\n");
     // Calculate the offset of the inode bitmap
     off_t inode_bitmap_offset = sb->i_bitmap_ptr + ((inode_index / 8) * sizeof(char));
 
@@ -52,6 +53,7 @@ static int read_inode(int inode_index, struct wfs_inode *inode)
 
 static int get_inode_index(const char *path)
 {
+    printf("entering get inode index\n");
     char *mutable_path = strdup(path); // Make a mutable copy of the path
     if (mutable_path == NULL)
     {
@@ -105,6 +107,7 @@ static int get_inode_index(const char *path)
 // // Function to get attributes of a file or directory
 static int wfs_getattr(const char *path, struct stat *stbuf)
 {
+    printf("entering wfs_getattr\n");
     // Initialize the struct stat with 0s
     memset(stbuf, 0, sizeof(struct stat));
 
@@ -136,6 +139,7 @@ static int wfs_getattr(const char *path, struct stat *stbuf)
 
 void extract_filename(const char *path, char *filename)
 {
+    printf("entering extract filename\n");
     const char *last_slash = strrchr(path, '/');
 
     // If '/' is found, copy the substring after it to filename
@@ -152,6 +156,7 @@ void extract_filename(const char *path, char *filename)
 
 static int update(char *path, void *data, int offset)
 {
+    printf("entering update\n");
 
     int inode_index = get_inode_index(path);
     if (inode_index == -1)
@@ -192,6 +197,7 @@ static int update(char *path, void *data, int offset)
 
 static int add(const char *path, mode_t mode)
 {
+    printf("entering add\n");
 
     time_t t;
     time(&t);
@@ -310,9 +316,10 @@ static int add(const char *path, mode_t mode)
 
 static int make(const char *path, mode_t mode)
 {
-    printf("printing!\n");
+    printf("entering make!\n");
+    printf("path: %s\n", path);
     // check if path is already present (it shouldn't be)
-    if (get_inode_index(path) != 0)
+    if (get_inode_index(path) == 0)
     {
         printf("returning -1 because it wasn't found\n");
         return -1;
@@ -327,6 +334,7 @@ static int make(const char *path, mode_t mode)
     dentry.num = last_inode_num + 1;
 
     char *parent_path = dirname(mutable_path);
+    printf("parent path %s\n", parent_path);
     // modify parent directory, then create new inode
     if (update(parent_path, &dentry, -1) < 0)
     {
@@ -338,28 +346,33 @@ static int make(const char *path, mode_t mode)
 
 static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
+    printf("calling wfs mknod\n");
     return make(path, __S_IFREG);
 
 }
 
 static int wfs_mkdir(const char *path, mode_t mode)
 {
+    printf("calling wfs mkdir\n");
 
     return make(path, __S_IFDIR); // Return 0 on success
 }
 
 static int wfs_unlink(const char *path)
 {
+    printf("calling wfs unlink\n");
     return 0; // Return 0 on success
 }
 
 static int wfs_rmdir(const char *path)
 {
+    printf("calling wfs rmdir\n");
     return 0; // Return 0 on success
 }
 
 static int wfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
+    printf("calling wfs read\n");
     // Get the inode index for the given path
     int inode_index = get_inode_index(path);
     if (inode_index == -1)
