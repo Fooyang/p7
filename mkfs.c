@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
     }
 
     // Memory map the file
-    void *addr = mmap(NULL, total_size_required, PROT_READ, MAP_PRIVATE, fd, 0);
+    void *addr = mmap(NULL, total_size_required, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (addr == MAP_FAILED) {
         perror("mmap");
         close(fd);
