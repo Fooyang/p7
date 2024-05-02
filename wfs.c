@@ -371,9 +371,9 @@ static int make(const char *path, mode_t mode)
 
 static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
-    printf("entering wfs_mknod\n");
+    // printf("entering wfs_mknod\n");
     return make(path, __S_IFREG);
-    return 0;
+
 }
 
 static int wfs_mkdir(const char *path, mode_t mode)
@@ -454,7 +454,7 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
     }
 
     return bytes_read; // Return the number of bytes read
-    //return 0;
+
 }
 
 static int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)

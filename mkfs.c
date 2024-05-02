@@ -35,6 +35,7 @@ int create_root_inode(void *addr, int num_inodes, int num_data_blocks) {
     root_inode->uid = getuid(); // Owner user ID
     root_inode->gid = getgid(); // Owner group ID
     root_inode->nlinks = 1; // Number of directory links (initially empty)
+    root_inode->mode = __S_IFDIR | 0755;
 
     char* data_at_offset = (char *) addr + sizeof(struct wfs_sb); // Initialize this pointer
 
