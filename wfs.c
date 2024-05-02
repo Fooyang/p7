@@ -19,6 +19,71 @@ struct wfs_sb *sb;
 struct wfs_inode *root_inode;
 int last_inode_num = 0;
 
+void modify_inode_bitmap(int inode_num, int value) {
+    int bitmap_index = inode_num / 8;
+    int bitmap_bit = inode_num % 8;
+    char* inode_bitmap = mem + sb->i_bitmap_ptr;
+    if (value == 1) {
+        // set bit
+        inode_bitmap[bitmap_index] |= 1 << bitmap_bit;
+    } else if (value == 0) {
+        // clear bit
+        inode_bitmap[bitmap_index] |= ~(1 << bitmap_bit);
+    }
+}
+
+int is_inode_allocated(int inode_num) {
+    int bitmap_index = inode_num / 8;
+    int bitmap_bit = inode_num % 8;
+    char* inode_bitmap = mem + sb->i_bitmap_ptr;
+    return ((inode_bitmap[bitmap_index] >> bitmap_bit) & 1);
+    
+}
+
+void modify_data_bitmap(int num, int value) {
+    int bitmap_index = num / 8;
+    int bitmap_bit = num % 8;
+    char* data_bitmap = mem + sb->d_bitmap_ptr;
+    if (value == 1) {
+        // set bit
+        data_bitmap[bitmap_index] |= 1 << bitmap_bit;
+    } else if (value == 0) {
+        // clear bit
+        data_bitmap[bitmap_index] |= ~(1 << bitmap_bit);
+    }
+}
+
+int is_data_block_allocated(int num) {
+    int bitmap_index = num / 8;
+    int bitmap_bit = num % 8;
+    char* data_bitmap = mem + sb->i_bitmap_ptr;
+    return ((data_bitmap[bitmap_index] >> bitmap_bit) & 1);
+}
+
+void print_inode_bitmap() {
+    char* inode_bitmap = mem + sb->i_bitmap_ptr;
+    printf("printing inode bitmap\n");
+    for (int i = 0; i < sb->num_inodes; i++) {
+        printf("%d ", is_inode_allocated(i));
+    }
+    printf("\n");
+}
+
+void print_data_bitmap() {
+    char* data_bitmap = mem + sb->d_bitmap_ptr;
+    printf("printing data bitmap\n");
+    for (int i = 0; i < sb->num_data_blocks; i++) {
+        printf("%d ", is_data_block_allocated(i));
+    }
+    printf("\n");
+}
+
+void write_to_inode(struct wfs_inode *inode) {
+    struct wfs_inode *inode_position = (struct wfs_inode *) (mem + sb->i_blocks_ptr + inode->num * BLOCK_SIZE);
+    memcpy(inode_position, inode, sizeof(inode));
+}
+
+
 static int read_inode(int inode_index, struct wfs_inode *inode)
 {
     printf("entering read_inode\n");
@@ -131,8 +196,8 @@ static int wfs_getattr(const char *path, struct stat *stbuf)
     memset(stbuf, 0, sizeof(struct stat));
 
     // Get the inode index corresponding to the path
-    // int inode_index = get_inode_index(path);
-    int inode_index = 0;
+    int inode_index = get_inode_index(path);
+
     if (inode_index == -1)
     {
         // Path doesn't exist
@@ -323,6 +388,7 @@ static int allocate_inode(const char *path, mode_t mode)
     return 0;
 }
 
+
 static int make(const char *path, mode_t mode)
 {
 
@@ -339,11 +405,11 @@ static int make(const char *path, mode_t mode)
     }
 
     char *mutable_path = strdup(path);
-    char filename[128];
-    extract_filename(mutable_path, filename);
+    char name[128];
+    extract_filename(mutable_path, name);
 
     struct wfs_dentry dentry;
-    strcpy(dentry.name, filename);
+    strcpy(dentry.name, name);
     dentry.num = last_inode_num + 1;
     printf("the dentry that we are storing in the parent is : %s, %d\n", dentry.name, dentry.num);
 
@@ -362,15 +428,16 @@ static int make(const char *path, mode_t mode)
 static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
     // printf("entering wfs_mknod\n");
-    return make(path, __S_IFREG);
+    mode |= __S_IFREG;
+    return make(path, mode);
 
 }
 
 static int wfs_mkdir(const char *path, mode_t mode)
 {
     // printf("entering wfs_mkdir\n");
-
-    return make(path, __S_IFDIR); // Return 0 on success
+    mode |= __S_IFDIR
+    return make(path, mode); // Return 0 on success
 
 }
 
