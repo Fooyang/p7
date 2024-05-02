@@ -24,7 +24,7 @@ static int read_inode(int inode_index, struct wfs_inode *inode)
     printf("entering read_inode\n");
 
     // Calculate the offset of the inode bitmap
-    off_t inode_bitmap_offset = sb->i_bitmap_ptr + ((inode_index / 8) * sizeof(char));
+    off_t inode_bitmap_offset = sb->i_bitmap_ptr + ((inode_index / 8));
 
 
     // Read the inode bitmap
@@ -75,7 +75,7 @@ static int get_inode_index(const char *path)
     {
         // Read the inode corresponding to the current index
         struct wfs_inode inode;
-        memcpy(&inode, mem + sb->i_blocks_ptr + inode_index * sizeof(struct wfs_inode), sizeof(struct wfs_inode));
+        memcpy(&inode, mem + sb->i_blocks_ptr + (inode_index * BLOCK_SIZE), sizeof(struct wfs_inode));
 
         // Search for the token in the directory entries
         int found = 0;
@@ -87,18 +87,12 @@ static int get_inode_index(const char *path)
             }
 
             // Calculate the pointer to the block
-            struct wfs_dentry *block = (struct wfs_dentry *)((uintptr_t)mem + (uintptr_t)sb->d_blocks_ptr + inode.blocks[i] * BLOCK_SIZE);
+            struct wfs_dentry *block = (struct wfs_dentry *)((uintptr_t)mem + inode.blocks[i]);
 
             // Iterate over the dentries in the block
             for (int j = 0; j < BLOCK_SIZE / sizeof(struct wfs_dentry); j++)
             {
                 struct wfs_dentry directory_entry = block[j];
-
-                // If the dentry name is empty, then there are no more dentries
-                if (directory_entry.name[0] == '\0')
-                {
-                    break;
-                }
 
                 // Compare the directory entry name with the token
                 if (strcmp(directory_entry.name, token) == 0)
@@ -390,7 +384,7 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
         }
 
         // Calculate the pointer to the block
-        char *block = mem + sb->d_blocks_ptr + inode.blocks[i] * BLOCK_SIZE;
+        char *block = mem + inode.blocks[i];
 
         // Calculate the size to read from this block
         size_t block_size = read_size - bytes_read;
@@ -449,7 +443,7 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
         }
 
         // Calculate the pointer to the block
-        struct wfs_dentry *block = (struct wfs_dentry *)((uintptr_t)mem + (uintptr_t)sb->d_blocks_ptr + inode.blocks[i] * BLOCK_SIZE);
+        struct wfs_dentry *block = (struct wfs_dentry *)((uintptr_t)mem + inode.blocks[i]);
 
 
         // Iterate over the dentries in the block
