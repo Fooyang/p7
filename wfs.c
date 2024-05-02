@@ -354,11 +354,10 @@ static int allocate_inode(const char *path, mode_t mode)
     time_t t;
     time(&t);
 
-    last_inode_num++;
-
     // set inode in inode block
     struct wfs_inode inode_ptr = {0};
     inode_ptr.num = last_inode_num;
+    last_inode_num++;
     inode_ptr.mode = mode;
     inode_ptr.uid = getuid();
     inode_ptr.gid = getgid();
@@ -530,11 +529,19 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 
 static int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
-    // int status = update(path, (void*)buf, offset);
-    // if (status != 0) {
-    //     return status;
-    // }
-    // return size;
+    struct wfs_inode inode;
+    int index = get_inode_index(path);
+
+    if (index == -1)
+    {
+        return -ENONET;
+    }
+    
+    if (read_inode(index, &inode) == -1)
+    {
+        return -EIO;
+    }
+
     return 0;
 }
 
