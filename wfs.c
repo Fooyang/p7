@@ -142,12 +142,15 @@ static int wfs_getattr(const char *path, struct stat *stbuf)
         return -ENOENT;
     }
 
+    printf("%d inode index", inode_index);
     // Read the inode from disk
     struct wfs_inode inode;
     if (read_inode(inode_index, &inode) == -1)
     {
         return -EIO;
     }
+
+    printf("%d from inode", inode.num);
     printf("in get attr, just after read_inode");
 
     stbuf->st_uid = inode.uid;      // Owner user ID
@@ -376,7 +379,7 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 
     // Read file contents
     ssize_t bytes_read = 0;
-    for (int i = 0; i < N_BLOCKS && bytes_read < read_size; i++)
+    for (int i = 0; i < (N_BLOCKS - 1) && bytes_read < read_size; i++)
     {
         if (inode.blocks[i] == 0)
         {
@@ -452,7 +455,7 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
             // If the dentry name is empty, then there are no more dentries
             if (block[j].name[0] == '\0')
             {
-                break;
+                continue;
             }
 
             // Add the dentry to the filler buffer
