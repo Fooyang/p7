@@ -24,8 +24,7 @@ static int read_inode(int inode_index, struct wfs_inode *inode)
     printf("entering read_inode\n");
 
     // Calculate the offset of the inode bitmap
-    off_t inode_bitmap_offset = sb->i_bitmap_ptr + ((inode_index / 8) * sizeof(char));
-
+    off_t inode_bitmap_offset = sb->i_bitmap_ptr + ((inode_index / 8));
 
     // Read the inode bitmap
     // char inode_bitmap = mem[inode_bitmap_offset];
@@ -185,6 +184,33 @@ void extract_filename(const char *path, char *filename)
     printf("exiting extract filename\n");
 }
 
+// static int allocate_data_block()
+// {
+//     int data_bitmap_block_found = 0;
+//     uint8_t *ptr = NULL;
+//     int data_bitmap_index = 0;
+//     for (ptr = (uint8_t *)sb->d_bitmap_ptr; ptr < (uint8_t *)sb->i_blocks_ptr; ptr++)
+//     {
+//         for (int j = 0; j < 8; j++)
+//         {
+//             data_bitmap_index += 1;
+//             if (!(*ptr & (1 << j)))
+//             {
+//                 // Set the jth bit to 1
+//                 *ptr |= (1 << j);
+//                 data_bitmap_block_found = 1;
+//                 break;
+//                 // Exit the function after setting the bit
+//             }
+//         }
+//         if (data_bitmap_block_found == 1)
+//         {
+//             break;
+//         }
+//     }
+//     return data_bitmap_index;
+// }
+
 static int update(char *path, void *data, int offset)
 {
 
@@ -208,7 +234,7 @@ static int update(char *path, void *data, int offset)
 
     // need to add new directory_entry to the end of the directory entries
     // if offset is not specified
-
+    int found = 0;
     if (offset < 0)
     {
         // int found = 0;
@@ -217,13 +243,24 @@ static int update(char *path, void *data, int offset)
             if (inode.blocks[i] == 0)
             {
                 memcpy(&(inode.blocks[i]), &data, sizeof(off_t));
-                // found = 1;
+                found = 1;
             }
+        }
+        // might need to code an indirect block for this
+        if (found == 0) {
+            printf(" in indirect block territory \n");
+                // find block and set in data bitmap
+            // int data_bitmap_index = allocate_data_block();
+            
+
         }
     }
     else
-    {
-        memcpy(&(inode.blocks[offset]), &data, sizeof(off_t));
+    {  
+        if (inode.blocks[offset] == 0) {
+            memcpy(&(inode.blocks[offset]), &data, sizeof(off_t));
+            found = 1;
+        }
     }
 
     printf("getting to the end of update\n");
@@ -231,50 +268,18 @@ static int update(char *path, void *data, int offset)
     return 0;
 }
 
-static int add(const char *path, mode_t mode)
+
+
+static int allocate_inode(const char *path, mode_t mode)
 {
 
     time_t t;
     time(&t);
     last_inode_num++;
-    off_t blocks[N_BLOCKS]; // Define the blocks array
+    int inode_index = get_inode_index(path);
 
-    // Initialize blocks and set all elements to 0
-    memset(blocks, 0, sizeof(blocks));
-    char *mutable_path = strdup(path);
-    char filename[128];
-
-    extract_filename(mutable_path, filename);
-    // char *parent_path = dirname(mutable_path);
-   
-    // find block and set in data bitmap
-    int found = 0;
-    uint8_t *ptr = NULL;
-    int offset = 0;
-    for (ptr = (uint8_t *)sb->d_bitmap_ptr; ptr < (uint8_t *)sb->i_blocks_ptr; ptr++)
-    {
-        for (int j = 0; j < 8; j++)
-        {
-            offset += 1;
-            if (!(*ptr & (1 << j)))
-            {
-                // Set the jth bit to 1
-                *ptr |= (1 << j);
-                found = 1;
-                break;
-                // Exit the function after setting the bit
-            }
-        }
-        if (found == 1)  
-        {
-            break;
-        }
-    }
-
-
-  
-    // store inode in its block
-    struct wfs_inode *inode_ptr = (struct wfs_inode *)((char *)sb->i_blocks_ptr + get_inode_index(path));
+    // set inode in inode block
+    struct wfs_inode *inode_ptr = (struct wfs_inode *)((char *)sb->i_blocks_ptr + inode_index);
     inode_ptr->num = last_inode_num;
     inode_ptr->mode = mode;
     inode_ptr->uid = getuid();
@@ -284,13 +289,31 @@ static int add(const char *path, mode_t mode)
     inode_ptr->atim = t;
     inode_ptr->mtim = t;
     inode_ptr->ctim = t;
-    inode_ptr->blocks[0] = (off_t)((char *)sb->d_blocks_ptr + (offset * BLOCK_SIZE));
+    memset(inode_ptr->blocks, 0, sizeof(inode_ptr->blocks));
+
+    // set inode in bitmap
+    off_t inode_bitmap_offset = sb->i_bitmap_ptr + (inode_index / 8);
+    char *inode_bitmap_position = mem + inode_bitmap_offset;
+
+    // Check if the inode index is valid
+    if (inode_index >= sb->num_inodes)
+    {
+        fprintf(stderr, "Invalid inode index\n");
+        return -1;
+    }
+    
+   // allocate inode in bitmap
+   *inode_bitmap_position |= (1 << (inode_index % 8));
 
     return 0;
 }
 
 static int make(const char *path, mode_t mode)
 {
+
+    // allocate new inode
+    // update parent inode
+        // can mean adding a new data block if necessary
    
     printf("here is the path %s\n", path);
     // check if path is already present (it shouldn't be)
@@ -318,7 +341,7 @@ static int make(const char *path, mode_t mode)
     }
     printf("update done\n");
 
-    return add(path, mode);
+    return allocate_inode(path, mode);
 }
 
 static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
