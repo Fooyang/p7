@@ -29,8 +29,8 @@ int create_superblock(void *addr, int num_inodes, int num_data_blocks) {
     return 0;
 }
 
-int create_root_inode(void *addr, int num_inodes) {
-    struct wfs_inode *root_inode = (struct wfs_inode *)((char *)addr + sizeof(struct wfs_sb));
+int create_root_inode(void *addr, int num_inodes, int num_data_blocks) {
+    struct wfs_inode *root_inode = (struct wfs_inode *)((char *)addr + sizeof(struct wfs_sb) + (num_inodes / 8) + (num_data_blocks / 8));
     memset(root_inode, 0, sizeof(struct wfs_inode)); // Initialize all fields to 0
     root_inode->uid = getuid(); // Owner user ID
     root_inode->gid = getgid(); // Owner group ID
@@ -133,7 +133,7 @@ int main(int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
-    if (create_root_inode(addr, num_inodes) == -1) {
+    if (create_root_inode(addr, num_inodes, num_data_blocks) == -1) {
         close(fd);
         munmap(addr, total_size_required);
         return EXIT_FAILURE;
