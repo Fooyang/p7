@@ -111,7 +111,9 @@ static int read_inode(int inode_index, struct wfs_inode *inode)
     }
 
     // // Calculate the offset of the inode on disk
-    off_t inode_offset = sb->i_blocks_ptr + (inode_index * BLOCK_SIZE);
+    int off = inode_index * BLOCK_SIZE;
+    off_t inode_offset = sb->i_blocks_ptr;
+    inode_offset = inode_offset + off;
 
     // Read the inode from the disk image
     memcpy(inode, mem + inode_offset, sizeof(struct wfs_inode));
@@ -188,7 +190,7 @@ static int get_inode_index(const char *path)
     return inode_index;
 }
 
-// // Function to get attributes of a file or directory
+// Function to get attributes of a file or directory
 static int wfs_getattr(const char *path, struct stat *stbuf)
 {
     printf("entering wfs_getattr\n");
@@ -206,20 +208,28 @@ static int wfs_getattr(const char *path, struct stat *stbuf)
         return -ENOENT;
     }
 
+    printf("%d inode index", inode_index);
     // Read the inode from disk
     struct wfs_inode inode;
     if (read_inode(inode_index, &inode) == -1)
     {
         return -EIO;
     }
+
+    printf("%d from inode", inode.num);
     printf("in get attr, just after read_inode");
 
-    stbuf->st_uid = inode.uid;      // Owner user ID
-    stbuf->st_gid = inode.gid;      // Owner group ID
-    stbuf->st_mtime = inode.mtim;   // Last modification time
-    stbuf->st_mode = inode.mode;    // Regular file with permissions
-    stbuf->st_nlink = inode.nlinks; // Number of hard links
-    stbuf->st_size = inode.size;    // File size in bytes
+    stbuf->st_dev = 0;
+    stbuf->st_ino = inode.num;
+    stbuf->st_mode = inode.mode;
+    stbuf->st_uid = inode.uid;
+    stbuf->st_gid = inode.gid;
+    stbuf->st_size = inode.size;
+    stbuf->st_blksize = BLOCK_SIZE;
+    stbuf->st_blocks = inode.size / BLOCK_SIZE;
+    stbuf->st_atime = inode.atim;
+    stbuf->st_mtime = inode.mtim;
+    stbuf->st_ctime = inode.ctim;
 
 
     printf("nlinks is what ? %d\n", (int) stbuf->st_nlink);
@@ -546,6 +556,8 @@ static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_
         return -ENOTDIR; // Not a directory
     }
 
+    filler(buf, ".", NULL, 0);
+    filler(buf, "..", NULL, 0);
     // Iterate over the blocks in the inode
     for (int i = 0; i < N_BLOCKS; i++)
     {
@@ -600,7 +612,7 @@ int main(int argc, char *argv[])
 
     disk_path = argv[1];          // Get the disk path from command-line arguments
     mount_point = argv[argc - 1]; // Get the mountpoint from command-line arguments
-    char *new_args[argc - 1];
+    char *new_args[argc];
     int new_count = 0;
     for (int i = 0; i < argc; i++)
     {
@@ -614,11 +626,11 @@ int main(int argc, char *argv[])
     new_args[new_count] = NULL;
 
     // mmap
-    fd = open(disk_path, O_RDWR);
+    fd = open(disk_path, O_RDWR, 0666);
     file_size = lseek(fd, 0, SEEK_END);
     mem = mmap(0, file_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     sb = (struct wfs_sb *)mem;
-    root_inode = (struct wfs_inode *)((char *)mem + sb->i_blocks_ptr);
+    root_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr);
     printf("the nlinks of the rootinode at the start are : %d\n", root_inode->nlinks);
     printf("the superblock is %d\n", (int) sb->num_data_blocks);
     printf("the root inode is %d\n", (int) root_inode->size);
@@ -626,5 +638,8 @@ int main(int argc, char *argv[])
     //     // Start the FUSE event loop with the provided callback functions
     int ret = fuse_main(argc - 1, new_args, &ops, NULL);
 
+    munmap(mem, file_size);
+    close(fd);
+    
     return ret;
 }
