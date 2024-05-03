@@ -17,6 +17,7 @@ int fd;
 char *mem;
 struct wfs_sb *sb;
 struct wfs_inode *root_inode;
+int num_allocated_blocks = 1;
 
 void modify_inode_bitmap(int inode_num, int value)
 {
@@ -891,7 +892,7 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
         start_point = 7;
     }
     
-    int total_writeable_data = BLOCK_SIZE * 62 + 1;
+    int total_writeable_data = BLOCK_SIZE * 7 + BLOCK_SIZE/sizeof(off_t) * BLOCK_SIZE;
     int write_size = size + offset;
     if (write_size >= total_writeable_data) {
         write_size = total_writeable_data - offset;
@@ -925,7 +926,12 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
         {
             if (inode->blocks[i] == 0)
             {
-                inode->blocks[i] = (off_t)(sb->d_blocks_ptr + allocate_data_block() * BLOCK_SIZE);
+                int index = allocate_data_block();
+                if (index >= sb->num_data_blocks)
+                {
+                    return -ENOSPC;
+                }
+                inode->blocks[i] = (off_t)(sb->d_blocks_ptr + index * BLOCK_SIZE);
             }
             off_t *block = (off_t *)(mem + inode->blocks[i]);
             int t = offset/BLOCK_SIZE - 7;
@@ -937,7 +943,12 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
                 //printf("%d data block num\n", get_data_block_num(block[j]));
                 if (block[j] == 0)
                 {
-                    block[j] = (off_t)(sb->d_blocks_ptr + allocate_data_block() * BLOCK_SIZE);
+                    int index = allocate_data_block();
+                    if (index >= sb->num_data_blocks)
+                    {
+                        return -ENOSPC;
+                    }
+                    block[j] = (off_t)(sb->d_blocks_ptr + index * BLOCK_SIZE);
                     printf("%zu block [j] offset\n", block[j]);
                     print_data_bitmap();
                 }
@@ -953,8 +964,13 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
         // Calculate the pointer to the block
         if (inode->blocks[i] == 0)
         {
+            int index = allocate_data_block();
+            if (index >= sb->num_data_blocks)
+            {
+                return -ENOSPC;
+            }
             printf("is this getting called bruh for index %d\n", i);
-            inode->blocks[i] = (off_t)(sb->d_blocks_ptr + allocate_data_block() * BLOCK_SIZE);
+            inode->blocks[i] = (off_t)(sb->d_blocks_ptr + index * BLOCK_SIZE);
             printf("inode blocks i is %d\n", (int) inode->blocks[i]);
         } 
         print_data_bitmap();
