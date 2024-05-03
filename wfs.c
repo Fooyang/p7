@@ -294,6 +294,8 @@ static int allocate_data_block()
     {
         if (is_data_block_allocated(index) == 0)
         {
+            char *address = mem + sb->d_blocks_ptr + index * BLOCK_SIZE;
+            memset(address, 0, BLOCK_SIZE);
             modify_data_bitmap(index, 1);
             break;
         }
@@ -307,70 +309,167 @@ int get_data_block_num(off_t data_offset)
     return data_offset / BLOCK_SIZE;
 }
 
-void add_dentry(struct wfs_inode *inode, struct wfs_dentry *dentry)
+void get_data_block(off_t offset, char *block_data)
 {
-    printf("entering add dentry\n");
-    int data_block_num = 0;
-    // if empty, allocate new data block
-    if (inode->blocks[0] == 0)
-    {
-        printf("entering first if: inode->blocks[0] is 0\n");
-        data_block_num = allocate_data_block();
-        char *dentry_destination = mem + sb->d_blocks_ptr + data_block_num * BLOCK_SIZE;
-        memcpy(dentry_destination, dentry, sizeof(struct wfs_dentry));
-        off_t offset_to_store = (off_t)(dentry_destination - mem);
-        struct wfs_inode *new_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr + inode->num * BLOCK_SIZE);
-        new_inode->blocks[0] = offset_to_store;
-        new_inode->size += sizeof(struct wfs_dentry);
-        printf("storing dentry for %s at position %d\n", dentry->name, (int)new_inode->blocks[0]);
-        return;
-    }
-    else
-    {
-        printf("entering first else: inode->blocks[0] is not 0\n");
-        data_block_num = get_data_block_num(inode->blocks[0]);
-        printf("data block num is %d\n", data_block_num);
-    }
-
-    for (int i = 1; i <= D_BLOCK; i++)
-    {
-        if (inode->blocks[i] == 0)
-        {
-            printf("inode->blocks[i] is 0, we boutta store the dentry at the position\n");
-            char *dentry_destination = mem + sb->d_blocks_ptr + data_block_num * BLOCK_SIZE + i * sizeof(struct wfs_dentry);
-            memcpy(dentry_destination, dentry, sizeof(struct wfs_dentry));
-            off_t offset_to_store = (off_t)(dentry_destination - mem);
-            struct wfs_inode *new_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr + inode->num * BLOCK_SIZE);
-            new_inode->blocks[i] = offset_to_store;
-            new_inode->size += sizeof(struct wfs_dentry);
-            printf("storing dentry for %s at position %d\n", dentry->name, (int)new_inode->blocks[i]);
-            break;
-        }
-    }
+    char *data_block_ptr = mem + offset;
+    memcpy(block_data, data_block_ptr, BLOCK_SIZE);
 }
 
-int find_dentry(char *name, off_t *blocks)
-{
-    printf("in find dentry\n");
+// void write_to_data_block(off_t offset, char *block_data) {
+//     printf(" at the start of this function\n");
+//     print_data_bitmap();
+//     char *data_block_ptr = mem + offset;
+//     memcpy(data_block_ptr, block_data, BLOCK_SIZE);
+//     print_data_bitmap();
+//     printf(" at the end of this function\n");
+// }
 
-    for (int i = 0; i < N_BLOCKS; i++)
-    {
-        // printf("entering loop on iteration %d\n", i);
-        if (blocks[i] == 0)
-        {
-            // printf("blocks i is 0\n");
-            continue;
-        }
-        struct wfs_dentry *dentry_location = (struct wfs_dentry *)(mem + blocks[i]);
-        if (strncmp(name, dentry_location->name, strlen(name)) == 0)
-        {
-            printf("exiting find dentry\n");
-            return 0;
-        }
-    }
-    printf("exiting find dentry\n");
-    return -1;
-}
+// void add_dentry(struct wfs_inode *inode, struct wfs_dentry *dentry)
+// {
+
+//     // look through blocks
+
+//     char block_data[BLOCK_SIZE] = {0};
+//     for (int i = 0; i < N_BLOCKS; i++) {
+//         // find and allocate block if needed
+//         if (inode->blocks[i] == 0) {
+//             int new_block_location = allocate_data_block();
+//             printf("new block location is %d\n", new_block_location);
+//             // inode->blocks[i] = (off_t) (sb->d_blocks_ptr + i * new_block_location);
+//             struct wfs_inode *new_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr + inode->num * BLOCK_SIZE);
+//             new_inode->blocks[i] = (off_t) (sb->d_blocks_ptr + BLOCK_SIZE * new_block_location);
+//             printf("adding at offset of %d", (int) new_inode->blocks[i]);
+//         } else {
+//             get_data_block(inode->blocks[i], block_data);
+//         }
+
+//         // now add dentry to block
+//         struct wfs_dentry *block_dentries = (struct wfs_dentry*) block_data;
+
+//         for (int j = 0; j < BLOCK_SIZE / sizeof(struct wfs_dentry); j++) {
+//             if (block_dentries[j].num == 0) {
+//                 block_dentries[j] = *dentry;
+//                 // write_to_data_block(inode->blocks[i], block_data);
+//                 char *data_block_ptr = mem + inode->blocks[i];
+//                 printf("inode->blocks[i] is %d\n", (int) inode->blocks[i]);
+//                 printf("block data when i exit: %s\n", (mem + inode->blocks[i]));
+//                 memcpy(data_block_ptr, block_data, BLOCK_SIZE);
+//                 print_data_bitmap();
+
+//                 return;
+//             }
+//         }
+//     }
+
+// printf("entering add dentry\n");
+// int data_block_num = 0;
+// for (int i = 0; i < N_BLOCKS; i++)
+// {
+//     // if this is the first dentry in the block, need to allocate new data block
+//     if (inode->blocks[i] == 0)
+//     {
+//         data_block_num = allocate_data_block();
+//         char *dentry_destination = mem + sb->d_blocks_ptr + data_block_num * BLOCK_SIZE;
+//         memcpy(dentry_destination, dentry, sizeof(struct wfs_dentry));
+//         off_t offset_to_store = (off_t)(dentry_destination - mem);
+//         struct wfs_inode *new_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr + inode->num * BLOCK_SIZE);
+//         new_inode->blocks[i] = offset_to_store;
+//         new_inode->size += sizeof(struct wfs_dentry);
+//         printf("storing dentry for %s at position %d\n", dentry->name, (int)new_inode->blocks[i]);
+//         return;
+//     }
+//     else
+//     {
+//         char *dentry_destination = (mem + inode->blocks[i]);
+//         for (int j = 0; j < BLOCK_SIZE / sizeof(off_t); j++)
+//         {
+//             if (((struct wfs_dentry *)(dentry_destination))->num == 0)
+//             {
+//                 memcpy(dentry_destination, dentry, sizeof(struct wfs_dentry));
+//                 struct wfs_inode *new_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr + inode->num * BLOCK_SIZE);
+//                 new_inode->size += sizeof(struct wfs_dentry);
+//                 printf("storing dentry for %s at position %d and index of %d\n", dentry->name, (int)new_inode->blocks[i], j);
+//                 return;
+//             }
+//             dentry_destination += sizeof(off_t);
+//         }
+//     }
+// }
+
+// printf("entering add dentry\n");
+// int data_block_num = 0;
+// // if empty, allocate new data block
+// if (inode->blocks[0] == 0)
+// {
+//     printf("entering first if: inode->blocks[0] is 0\n");
+//     data_block_num = allocate_data_block();
+//     char *dentry_destination = mem + sb->d_blocks_ptr + data_block_num * BLOCK_SIZE;
+//     memcpy(dentry_destination, dentry, sizeof(struct wfs_dentry));
+//     off_t offset_to_store = (off_t)(dentry_destination - mem);
+//     struct wfs_inode *new_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr + inode->num * BLOCK_SIZE);
+//     new_inode->blocks[0] = offset_to_store;
+//     new_inode->size += sizeof(struct wfs_dentry);
+//     printf("storing dentry for %s at position %d\n", dentry->name, (int)new_inode->blocks[0]);
+//     return;
+// }
+// else
+// {
+//     printf("entering first else: inode->blocks[0] is not 0\n");
+//     data_block_num = get_data_block_num(inode->blocks[0]);
+//     printf("data block num is %d\n", data_block_num);
+// }
+
+// for (int i = 1; i <= D_BLOCK; i++)
+// {
+//     if (inode->blocks[i] == 0)
+//     {
+//         printf("inode->blocks[i] is 0, we boutta store the dentry at the position\n");
+//         char *dentry_destination = mem + sb->d_blocks_ptr + data_block_num * BLOCK_SIZE + i * sizeof(struct wfs_dentry);
+//         memcpy(dentry_destination, dentry, sizeof(struct wfs_dentry));
+//         off_t offset_to_store = (off_t)(dentry_destination - mem);
+//         struct wfs_inode *new_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr + inode->num * BLOCK_SIZE);
+//         new_inode->blocks[i] = offset_to_store;
+//         new_inode->size += sizeof(struct wfs_dentry);
+//         printf("storing dentry for %s at position %d\n", dentry->name, (int)new_inode->blocks[i]);
+//         return;
+//     }
+// }
+// off_t *indirect_block = sb->d_blocks_ptr + data_block_num * BLOCK_SIZE + 7 * sizeof(struct wfs_dentry);
+// for (int i = 0; i < BLOCK_SIZE / sizeof(off_t))
+//}
+
+// int find_dentry(char *name, off_t *blocks)
+// {
+//     printf("in find dentry\n");
+
+//     for (int i = 0; i < D_BLOCK; i++)
+//     {
+//         // printf("entering loop on iteration %d\n", i);
+//         if (blocks[i] == 0)
+//         {
+//             // printf("blocks i is 0\n");
+//             continue;
+//         }
+//         struct wfs_dentry *dentry_location = (struct wfs_dentry *)(mem + blocks[i]);
+//         if (strncmp(name, dentry_location->name, strlen(name)) == 0)
+//         {
+//             printf("exiting find dentry\n");
+//             return 0;
+//         }
+//     }
+//     off_t *indirect_block = (off_t *)(mem + blocks[IND_BLOCK]);
+//     for (int i = 0; i < BLOCK_SIZE / sizeof(off_t); i++) {
+//         struct wfs_dentry *dentry_location = (struct wfs_dentry *)(mem + indirect_block[i]);
+//         if (strncmp(name, dentry_location->name, strlen(name)) == 0)
+//         {
+//             printf("exiting find dentry\n");
+//             return 0;
+//         }
+//     }
+
+//     printf("exiting find dentry\n");
+//     return -1;
+// }
 
 static int update_parent(char *path, struct wfs_dentry *dentry, int offset)
 {
@@ -382,20 +481,75 @@ static int update_parent(char *path, struct wfs_dentry *dentry, int offset)
         return -ENOENT;
     }
     // Read the inode from disk
-    struct wfs_inode inode;
-    if (read_inode(inode_index, &inode) == -1)
-    {
-        printf("read inode returned -1\n");
-        return -EIO;
-    }
+    // struct wfs_inode inode;
+    // if (read_inode(inode_index, &inode) == -1)
+    // {
+    //     printf("read inode returned -1\n");
+    //     return -EIO;
+    // }
+    struct wfs_inode *inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr + inode_index * BLOCK_SIZE);
+
     // check if dentry already stored
-    if (find_dentry(dentry->name, inode.blocks) == 0)
+    // if (find_dentry(dentry->name, inode.blocks) == 0)
+    // {
+    //     printf("dentry already in parent");
+    //     return -EEXIST;
+    // }
+
+    // add_dentry(&inode, dentry);
+
+    int found = 0;
+    for (int i = 0; i < N_BLOCKS; i++)
     {
-        printf("dentry already in parent");
-        return -EEXIST;
+    
+            char block_data[BLOCK_SIZE] = {0};
+        // find and allocate block if needed
+        if (inode->blocks[i] == 0)
+        {
+            int new_block_location = allocate_data_block();
+            printf("new block location is %d\n", new_block_location);
+            inode->blocks[i] = (off_t)(sb->d_blocks_ptr + BLOCK_SIZE * new_block_location);
+            printf("adding at offset of %d", (int)inode->blocks[i]);
+        }
+        else
+        {
+          
+            get_data_block(inode->blocks[i], block_data);
+        }
+
+        
+        // now add dentry to block
+        struct wfs_dentry *block_dentries = (struct wfs_dentry *)block_data;
+
+        for (int j = 0; j < BLOCK_SIZE / sizeof(struct wfs_dentry); j++)
+        {
+            printf("i is %d and j is %d\n", i, j);
+            if (block_dentries[j].num == 0)
+            {
+                block_dentries[j] = *dentry;
+                // write_to_data_block(inode->blocks[i], block_data);
+                char *data_block_ptr = mem + inode->blocks[i];
+                inode->size += sizeof(struct wfs_dentry);
+                printf("inode->blocks[i] is %d\n", (int)inode->blocks[i]);
+                printf("block data when i exit: %s\n", (mem + inode->blocks[i]));
+                memcpy(data_block_ptr, block_data, BLOCK_SIZE);
+   
+                found = 1;
+                break;
+
+            }
+          
+        
+        }
+        if (found == 1) {
+            break;
+        }
     }
 
-    add_dentry(&inode, dentry);
+    printf("out of add dentry\n");
+
+
+
     return 0;
 }
 
@@ -473,9 +627,7 @@ static int make(const char *path, mode_t mode)
     {
         return -1;
     }
-
-    print_data_bitmap();
-    print_inode_offsets();
+    printf("outside of update parent\n");
     printf("update done\n");
 
     if (allocate_inode(path, mode) < 0)
@@ -489,14 +641,14 @@ static int make(const char *path, mode_t mode)
 
 static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
-    // printf("entering wfs_mknod\n");
+    printf("ENTERING WFS_MKNOD||||||\n");
     mode |= __S_IFREG;
     return make(path, mode);
 }
 
 static int wfs_mkdir(const char *path, mode_t mode)
 {
-    // printf("entering wfs_mkdir\n");
+    printf("ENTERING WFS_MKDIR||||||\n");
     mode |= __S_IFDIR;
     return make(path, mode); // Return 0 on success
 }
@@ -695,8 +847,8 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
         {
             printf("is this getting called bruh for index %d\n", i);
             inode->blocks[i] = (off_t)(sb->d_blocks_ptr + allocate_data_block() * BLOCK_SIZE);
-            printf("inode blocks i is %d\n", (int) inode->blocks[i]);
-        } 
+            printf("inode blocks i is %d\n", (int)inode->blocks[i]);
+        }
         print_data_bitmap();
 
         char *block = mem + inode->blocks[i];
@@ -717,7 +869,7 @@ static int wfs_write(const char *path, const char *buf, size_t size, off_t offse
         inode->size = write_size + offset;
     }
 
-    printf("inode blocks 0 is %d\n", (int) inode->blocks[0]);
+    printf("inode blocks 0 is %d\n", (int)inode->blocks[0]);
     return bytes_written;
 }
 
