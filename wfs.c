@@ -753,7 +753,20 @@ static int wfs_unlink(const char *path)
         }
     }
 
-
+    if (inode->blocks[IND_BLOCK] != 0)
+    {
+        off_t *block = (off_t *)(mem + inode->blocks[IND_BLOCK]);
+        for (int j = 0; j < BLOCK_SIZE / sizeof(off_t); j++)
+        {
+            if (block[j] == 0)
+            {
+                continue;
+            }
+            modify_data_bitmap(get_data_block_num(block[j]), 0);
+        }
+        modify_data_bitmap(get_data_block_num(inode->blocks[IND_BLOCK]), 0);
+    }
+    
     // free indirect data blocks
 
     // remove file dentry from parent directory
