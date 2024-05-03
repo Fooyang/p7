@@ -56,7 +56,7 @@ void modify_data_bitmap(int num, int value) {
 int is_data_block_allocated(int num) {
     int bitmap_index = num / 8;
     int bitmap_bit = num % 8;
-    char* data_bitmap = mem + sb->i_bitmap_ptr;
+    char* data_bitmap = mem + sb->d_bitmap_ptr;
     return ((data_bitmap[bitmap_index] >> bitmap_bit) & 1);
 }
 
@@ -354,10 +354,11 @@ static int allocate_inode(const char *path, mode_t mode)
     time_t t;
     time(&t);
 
+    last_inode_num++;
+
     // set inode in inode block
     struct wfs_inode inode_ptr = {0};
     inode_ptr.num = last_inode_num;
-    last_inode_num++;
     inode_ptr.mode = mode;
     inode_ptr.uid = getuid();
     inode_ptr.gid = getgid();
@@ -401,7 +402,7 @@ static int make(const char *path, mode_t mode)
 
     printf("here is the path %s\n", path);
     // check if path is already present (it shouldn't be)
-    if (get_inode_index(path) == 0)
+    if (get_inode_index(path) != -1)
     {
         printf("the new inode already exists\n");
         return -1;
@@ -451,7 +452,6 @@ static int wfs_mkdir(const char *path, mode_t mode)
     // printf("entering wfs_mkdir\n");
     mode |= __S_IFDIR;
     return make(path, mode); // Return 0 on success
-
 }
 
 static int wfs_unlink(const char *path)
@@ -461,6 +461,41 @@ static int wfs_unlink(const char *path)
 
 static int wfs_rmdir(const char *path)
 {
+    // Get the inode index of the directory to be removed
+    int inode_index = get_inode_index(path);
+    if (inode_index == -1)
+    {
+        // Directory doesn't exist
+        return -ENOENT;
+    }
+
+    // Read the inode from disk
+    struct wfs_inode inode;
+    if (read_inode(inode_index, &inode) == -1)
+    {
+        // Error reading inode
+        return -EIO;
+    }
+
+    // Check if the inode represents a directory
+    if (!(S_ISDIR(inode.mode)))
+    {
+        // Not a directory
+        return -ENOTDIR;
+    }
+
+    // Check if the directory is empty (excluding "." and "..")
+    if (inode.nlinks > 1)
+    {
+        // Directory is not empty
+        return -ENOTEMPTY;
+    }
+    // char *parent_path = dirname(strdup(path));
+    // char name[MAX_NAME];
+    // extract_filename(path, name);
+
+    // update_parent(parent_path, )
+    // modify_inode_bitmap(inode_index, 0);
     return 0; // Return 0 on success
 }
 
@@ -468,7 +503,7 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 {
     // Get the inode index for the given path
 
-    printf("%s IN WFS_READ", path);
+    printf("%s IN WFS_READ\n", path);
     int inode_index = get_inode_index(path);
     if (inode_index == -1)
     {
@@ -488,9 +523,12 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
     {
         return -EISDIR; // Not a regular file
     }
+    printf("%d inode name\n", inode.num);
 
     // Calculate remaining size
+    //inode.size = 6;
     int remaining = inode.size - offset;
+    printf("%d INODE SIZE", remaining);
     if (remaining <= 0)
     {
         return 0; // No more data to read
@@ -498,29 +536,53 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 
     // Determine the size to read
     size_t read_size = remaining >= size ? size : remaining;
+    // size_t read_size = size;
 
     // Read file contents
     ssize_t bytes_read = 0;
-    for (int i = 0; i < N_BLOCKS && bytes_read < read_size; i++)
+    int start_point = offset / BLOCK_SIZE;
+
+    printf("%d start point, %zu offset\n", start_point, offset);
+    printf("%zu read_size, %zu size\n", read_size, size);
+    for (int i = start_point; i < N_BLOCKS && bytes_read < read_size; i++)
     {
-        if (inode.blocks[i] == 0)
-        {
-            break; // No more blocks
-        }
-
-        // Calculate the pointer to the block
-        char *block = mem + inode.blocks[i];
-
         // Calculate the size to read from this block
         size_t block_size = read_size - bytes_read;
         if (block_size > BLOCK_SIZE)
         {
             block_size = BLOCK_SIZE;
         }
+        if (i == start_point)
+        {
+            block_size = block_size - (offset % BLOCK_SIZE);
+            printf("%zu modified blocks size\n", block_size);
+        } else if (i == N_BLOCKS - 1) {
+            off_t *block = (off_t *)(mem + inode.blocks[i]);
+            int j = 0;
+            while (bytes_read < read_size)
+            {
+                char *block_to_read = mem + block[j];
+                size_t block_size = read_size - bytes_read;
+                if (block_size > BLOCK_SIZE)
+                {
+                    block_size = BLOCK_SIZE;
+                }
 
+                // Copy data from the block to the buffer
+                memcpy(buf + bytes_read, block_to_read, block_size);
+                bytes_read += block_size;
+                j++;
+            }
+            return bytes_read;
+        }
+        
+        // Calculate the pointer to the block
+        char *block = mem + inode.blocks[i];
+        
         // Copy data from the block to the buffer
         memcpy(buf + bytes_read, block, block_size);
         bytes_read += block_size;
+        printf("%zu bytes ultimately read\n", bytes_read);
     }
 
     return bytes_read; // Return the number of bytes read
@@ -529,20 +591,78 @@ static int wfs_read(const char *path, char *buf, size_t size, off_t offset, stru
 
 static int wfs_write(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
 {
-    struct wfs_inode inode;
+    struct wfs_inode *inode;
     int index = get_inode_index(path);
 
     if (index == -1)
     {
-        return -ENONET;
+        return -ENOENT;
     }
     
-    if (read_inode(index, &inode) == -1)
+    // if (read_inode(index, &inode) == -1)
+    // {
+    //     return -EIO;
+    // }
+
+    inode = (struct wfs_inode*)(mem + sb->i_blocks_ptr + index * BLOCK_SIZE);
+
+    // Read file contents
+    ssize_t bytes_written = 0;
+    int start_point = offset / BLOCK_SIZE;
+    int total_writeable_data = BLOCK_SIZE * 7 + BLOCK_SIZE * BLOCK_SIZE/sizeof(off_t);
+    int write_size = size + offset >= total_writeable_data ? total_writeable_data - offset : size;
+    printf("%d start point, %zu offset\n", start_point, offset);
+    printf("%d\n", total_writeable_data);
+    printf("%d write_size, %zu size\n", write_size, size);
+
+    for (int i = start_point; i < N_BLOCKS && bytes_written < write_size; i++)
     {
-        return -EIO;
+        // Calculate the size to write from this block
+        size_t block_size = write_size - bytes_written;
+        if (block_size > BLOCK_SIZE)
+        {
+            block_size = BLOCK_SIZE;
+        }
+        printf("%zu block size\n", block_size);
+        if (i == start_point)
+        {
+            block_size = block_size - (offset % BLOCK_SIZE);
+            printf("%zu modified blocks size\n", block_size);
+        } else if (i == N_BLOCKS - 1)
+        {
+            off_t *block = (off_t *)(mem + inode->blocks[i]);
+            for (int j = 0; j < BLOCK_SIZE / sizeof(off_t) && bytes_written < write_size; j++)
+            {
+                char *block_to_write = mem + block[j];
+                size_t block_to_write_size = write_size - bytes_written;
+                if (block_to_write_size > BLOCK_SIZE)
+                {
+                    block_to_write_size = BLOCK_SIZE;
+                }
+                // Copy data from the buffer to the block
+                memcpy(block_to_write, buf + bytes_written, block_to_write_size);
+                bytes_written += block_to_write_size;
+            }
+            break;
+        }
+        // Calculate the pointer to the block
+        char *block = mem + inode->blocks[i];
+        // Copy data from the block to the buffer
+        if (i == start_point)
+        {
+            memcpy(block + (offset % BLOCK_SIZE), buf + bytes_written, block_size);
+        } else {
+            memcpy(block, buf + bytes_written, block_size);
+        }
+        bytes_written += block_size;
+        printf("%zu bytes ultimately written\n", bytes_written);
+    }
+    if (write_size + offset > inode->size)
+    {
+        inode->size = write_size + offset;
     }
 
-    return 0;
+    return bytes_written;
 }
 
 static int wfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi)
@@ -639,7 +759,7 @@ int main(int argc, char *argv[])
     // mmap
     fd = open(disk_path, O_RDWR, 0666);
     file_size = lseek(fd, 0, SEEK_END);
-    mem = mmap(0, file_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    mem = mmap(0, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     sb = (struct wfs_sb *)mem;
     root_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr);
     printf("the nlinks of the rootinode at the start are : %d\n", root_inode->nlinks);
