@@ -17,12 +17,12 @@ int fd;
 char *mem;
 struct wfs_sb *sb;
 struct wfs_inode *root_inode;
-int last_inode_num = 0;
 
 void modify_inode_bitmap(int inode_num, int value)
 {
     int bitmap_index = inode_num / 8;
     int bitmap_bit = inode_num % 8;
+
     char *inode_bitmap = mem + sb->i_bitmap_ptr;
     if (value == 1)
     {
@@ -32,7 +32,7 @@ void modify_inode_bitmap(int inode_num, int value)
     else if (value == 0)
     {
         // clear bit
-        inode_bitmap[bitmap_index] |= ~(1 << bitmap_bit);
+        inode_bitmap[bitmap_index] &= ~(1 << bitmap_bit);
     }
 }
 
@@ -57,7 +57,7 @@ void modify_data_bitmap(int num, int value)
     else if (value == 0)
     {
         // clear bit
-        data_bitmap[bitmap_index] |= ~(1 << bitmap_bit);
+        data_bitmap[bitmap_index] &= ~(1 << bitmap_bit);
     }
 }
 
@@ -305,7 +305,7 @@ static int allocate_data_block()
 
 int get_data_block_num(off_t data_offset)
 {
-    data_offset -= sb->d_bitmap_ptr;
+    data_offset -= sb->d_blocks_ptr;
     return data_offset / BLOCK_SIZE;
 }
 
@@ -480,29 +480,14 @@ static int update_parent(char *path, struct wfs_dentry *dentry, int offset)
         // Path doesn't exist
         return -ENOENT;
     }
-    // Read the inode from disk
-    // struct wfs_inode inode;
-    // if (read_inode(inode_index, &inode) == -1)
-    // {
-    //     printf("read inode returned -1\n");
-    //     return -EIO;
-    // }
+
     struct wfs_inode *inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr + inode_index * BLOCK_SIZE);
-
-    // check if dentry already stored
-    // if (find_dentry(dentry->name, inode.blocks) == 0)
-    // {
-    //     printf("dentry already in parent");
-    //     return -EEXIST;
-    // }
-
-    // add_dentry(&inode, dentry);
 
     int found = 0;
     for (int i = 0; i < N_BLOCKS; i++)
     {
-    
-            char block_data[BLOCK_SIZE] = {0};
+
+        char block_data[BLOCK_SIZE] = {0};
         // find and allocate block if needed
         if (inode->blocks[i] == 0)
         {
@@ -513,11 +498,10 @@ static int update_parent(char *path, struct wfs_dentry *dentry, int offset)
         }
         else
         {
-          
+
             get_data_block(inode->blocks[i], block_data);
         }
 
-        
         // now add dentry to block
         struct wfs_dentry *block_dentries = (struct wfs_dentry *)block_data;
 
@@ -533,22 +517,18 @@ static int update_parent(char *path, struct wfs_dentry *dentry, int offset)
                 printf("inode->blocks[i] is %d\n", (int)inode->blocks[i]);
                 printf("block data when i exit: %s\n", (mem + inode->blocks[i]));
                 memcpy(data_block_ptr, block_data, BLOCK_SIZE);
-   
+
                 found = 1;
                 break;
-
             }
-          
-        
         }
-        if (found == 1) {
+        if (found == 1)
+        {
             break;
         }
     }
 
     printf("out of add dentry\n");
-
-
 
     return 0;
 }
@@ -559,11 +539,33 @@ static int allocate_inode(const char *path, mode_t mode)
     time_t t;
     time(&t);
 
-    last_inode_num++;
+    int index;
+    int inode_found = 0;
+    printf("right before for loop... for num_inodes %d\n", (int)sb->num_inodes);
+    for (index = 0; index < sb->num_inodes; index++)
+    {
+        printf("are we even entering this?\n");
+        if (is_inode_allocated(index) == 0)
+        {
+            char *address = mem + sb->i_blocks_ptr + index * BLOCK_SIZE;
+            memset(address, 0, BLOCK_SIZE);
+            modify_inode_bitmap(index, 1);
+            inode_found = 1;
+            printf(" we found an inode for index %d \n", index);
+            break;
+        }
+    }
+
+    // check if index is valid
+    if (inode_found == 0)
+    {
+        printf("no inodes found, should return ENOSPC\n");
+        return -1;
+    }
 
     // set inode in inode block
     struct wfs_inode inode_ptr = {0};
-    inode_ptr.num = last_inode_num;
+    inode_ptr.num = index;
     inode_ptr.mode = mode;
     inode_ptr.uid = getuid();
     inode_ptr.gid = getgid();
@@ -577,22 +579,9 @@ static int allocate_inode(const char *path, mode_t mode)
 
     printf("inode has been set in inode block\n");
 
-    // set inode in bitmap
-    // off_t inode_bitmap_offset = sb->i_bitmap_ptr + (last_inode_num / 8);
-    // char *inode_bitmap_position = mem + inode_bitmap_offset;
-
-    // Check if the inode index is valid
-    if (last_inode_num >= sb->num_inodes)
-    {
-        fprintf(stderr, "Invalid inode index\n");
-        return -1;
-    }
-
-    // allocate inode in bitmap
-    modify_inode_bitmap(last_inode_num, 1);
     printf("inode allocated in bitmap\n");
 
-    return 0;
+    return index;
 }
 
 static int make(const char *path, mode_t mode)
@@ -610,19 +599,27 @@ static int make(const char *path, mode_t mode)
         return -1;
     }
 
+    int inode_num = allocate_inode(path, mode);
+
+    if (inode_num < 0)
+    {
+        // no space
+        return 1;
+    }
+
     char *mutable_path = strdup(path);
     char name[128];
     extract_filename(mutable_path, name);
 
     struct wfs_dentry dentry;
     strcpy(dentry.name, name);
-    dentry.num = last_inode_num + 1;
+    dentry.num = inode_num;
     printf("the dentry that we are storing in the parent is : %s, %d\n", dentry.name, dentry.num);
 
     char *parent_path = dirname(mutable_path);
     printf("parent path %s\n", parent_path);
 
-    // modify parent directory, then create new inode
+    // modify parent directory
     if (update_parent(parent_path, &dentry, -1) < 0)
     {
         return -1;
@@ -630,10 +627,6 @@ static int make(const char *path, mode_t mode)
     printf("outside of update parent\n");
     printf("update done\n");
 
-    if (allocate_inode(path, mode) < 0)
-    {
-        return -1;
-    }
     print_inode_bitmap();
     print_inode_offsets();
     return 0;
@@ -643,24 +636,38 @@ static int wfs_mknod(const char *path, mode_t mode, dev_t rdev)
 {
     printf("ENTERING WFS_MKNOD||||||\n");
     mode |= __S_IFREG;
-    return make(path, mode);
+    int code = make(path, mode);
+    if (code == 1)
+    {
+        printf("returning %d", ENOSPC);
+        return -ENOSPC;
+    }
+    else
+    {
+        return 0;
+    }
 }
 
 static int wfs_mkdir(const char *path, mode_t mode)
 {
     printf("ENTERING WFS_MKDIR||||||\n");
     mode |= __S_IFDIR;
-    return make(path, mode); // Return 0 on success
+    int code = make(path, mode);
+    if (code == 1)
+    {
+        printf("returning %d", ENOSPC);
+        return -ENOSPC;
+    }
+    else
+    {
+        return 0;
+    }
 }
 
-static int wfs_unlink(const char *path)
-{
-    return 0; // Return 0 on success
-}
-
-static int wfs_rmdir(const char *path)
+int remove_inode(const char *path)
 {
     // Get the inode index of the directory to be removed
+    printf("entering rmdir\n");
     int inode_index = get_inode_index(path);
     if (inode_index == -1)
     {
@@ -668,34 +675,97 @@ static int wfs_rmdir(const char *path)
         return -ENOENT;
     }
 
-    // Read the inode from disk
-    struct wfs_inode inode;
-    if (read_inode(inode_index, &inode) == -1)
+    char *mutable_path = strdup(path);
+    char name[128];
+    extract_filename(mutable_path, name);
+
+    char *parent_path = dirname(mutable_path);
+    // printf("parent path is %s\n", parent_path);
+    int parent_inode_index = get_inode_index(parent_path);
+    // printf("parent inode index is %d\n", parent_inode_index);
+
+    if (parent_inode_index == -1)
     {
-        // Error reading inode
-        return -EIO;
+        return -ENOENT;
+    }
+    struct wfs_inode *parent_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr + BLOCK_SIZE * parent_inode_index);
+    // printf("parent inode number: %d\n", parent_inode->num);
+
+    // remove dentry from parent first
+    int dentry_removed = 0;
+    for (int i = 0; i < N_BLOCKS; i++)
+    {
+        off_t offset = parent_inode->blocks[i];
+        printf("offset is %d\n", (int)offset);
+        for (int j = 0; j < BLOCK_SIZE / sizeof(struct wfs_dentry); j++)
+        {
+            struct wfs_dentry *dentry = (struct wfs_dentry *)(mem + offset + j * sizeof(struct wfs_dentry));
+            printf("dentry name and name are %s and %s\n", dentry->name, name);
+            if (strncmp(dentry->name, name, 128) == 0)
+            {
+                memset(dentry, 0, sizeof(struct wfs_dentry));
+                dentry_removed = 1;
+                break;
+            }
+        }
+        if (dentry_removed == 1)
+        {
+            break;
+        }
     }
 
-    // Check if the inode represents a directory
-    if (!(S_ISDIR(inode.mode)))
+    if (dentry_removed == 0)
     {
-        // Not a directory
-        return -ENOTDIR;
+        printf("couldn't find dentry\n");
+        return -1;
+    }
+    else
+    {
+        printf("removed dentry\n");
     }
 
-    // Check if the directory is empty (excluding "." and "..")
-    if (inode.nlinks > 1)
-    {
-        // Directory is not empty
-        return -ENOTEMPTY;
-    }
-    // char *parent_path = dirname(strdup(path));
-    // char name[MAX_NAME];
-    // extract_filename(path, name);
+    // unallocate inode block
+    modify_inode_bitmap(inode_index, 0);
 
-    // update_parent(parent_path, )
-    // modify_inode_bitmap(inode_index, 0);
+
+    return 0;
+}
+
+static int wfs_unlink(const char *path)
+{
+    // unlink steps
+    // remove file dentry from parent directory
+    // free up data blocks corresponding to inode
+    // unallocate inode
+
+    // free direct data blocks
+    int inode_index = get_inode_index(path);
+    if (inode_index == -1)
+    {
+        // Directory doesn't exist
+        return -ENOENT;
+    }
+    struct wfs_inode *inode = (struct wfs_inode *) (mem + sb->i_blocks_ptr + inode_index * BLOCK_SIZE);
+    for (int i = 0; i <= D_BLOCK; i++) {
+        if (inode->blocks[i] != 0) {
+            modify_data_bitmap(get_data_block_num(inode->blocks[i]), 0);
+        }
+    }
+
+
+    // free indirect data blocks
+
+    // remove file dentry from parent directory
+    // and unallocate inode
+    remove_inode(path);
+
     return 0; // Return 0 on success
+}
+
+static int wfs_rmdir(const char *path)
+{
+    return remove_inode(path);
+    // Return 0 on success
 }
 
 static int wfs_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi)
@@ -971,7 +1041,8 @@ int main(int argc, char *argv[])
     sb = (struct wfs_sb *)mem;
     root_inode = (struct wfs_inode *)(mem + sb->i_blocks_ptr);
     printf("the nlinks of the rootinode at the start are : %d\n", root_inode->nlinks);
-    printf("the superblock is %d\n", (int)sb->num_data_blocks);
+    printf("the superblock data blocks is %d\n", (int)sb->num_data_blocks);
+    printf("the superblock inodes is %d\n", (int)sb->num_inodes);
     printf("the root inode is %d\n", (int)root_inode->size);
 
     //     // Start the FUSE event loop with the provided callback functions
